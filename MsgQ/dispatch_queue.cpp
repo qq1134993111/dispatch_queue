@@ -10,10 +10,7 @@ DispatchQueue::DispatchQueue() :timer_thread_started_(false), quit_(false), gene
 
 DispatchQueue::~DispatchQueue()
 {
-	if (IsRunning())
-	{
-		Stop();
-	}
+	Stop();
 	Join();
 }
 
