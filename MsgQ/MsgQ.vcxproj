@@ -143,6 +143,7 @@
     <ClInclude Include="dispatch_queue.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
+    <ClInclude Include="TimeElapsed.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dispatch_queue.cpp" />
