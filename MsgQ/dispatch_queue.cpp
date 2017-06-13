@@ -2,7 +2,7 @@
 #include "dispatch_queue.h"
 #include<algorithm>
 
-DispatchQueue::DispatchQueue() :timer_thread_started_(false), quit_(false), generate_timer_id_(0), fall_through_(false)
+DispatchQueue::DispatchQueue() :timer_thread_started_(false), work_queue_thread_started(false),quit_(false), generate_timer_id_(0), fall_through_(false)
 {
 	InitThread();
 }
