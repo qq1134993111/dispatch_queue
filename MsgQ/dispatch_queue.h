@@ -96,7 +96,12 @@ public:
 		}
 	};
 
-
+	static DispatchQueue& GetDefaultDispatchQueue()
+	{ 
+		static DispatchQueue s_dispatchqueue;
+		return s_dispatchqueue;
+	}
+public:
 	DispatchQueue();
 	~DispatchQueue();
 
@@ -104,7 +109,7 @@ public:
 	DispatchQueue(DispatchQueue &&) = delete;
 	DispatchQueue & operator=(const DispatchQueue &) = delete;
 	DispatchQueue & operator=(DispatchQueue &&) = delete;
-public:
+
 	void DispatchAsync(std::function< void() > func);
 	template<class F, class... Args>
 	void DispatchAsync(F&& f, Args&&... args)
