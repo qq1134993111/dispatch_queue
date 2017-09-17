@@ -29,13 +29,13 @@ void TestTimer(uint32_t index)
 	auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
 	start = end;
 
-	static uint32_t nTimes = -1;
+	static uint64_t nTimes = -1;
 	static uint64_t nTotal = 0;
-	static uint32_t nMax = std::numeric_limits<uint32_t>::min(), nMin = std::numeric_limits<uint32_t>::max(), nAvg = 0;
+	static uint64_t nMax = std::numeric_limits<uint64_t>::min(), nMin = std::numeric_limits<uint64_t>::max(), nAvg = 0;
 
 	if (++nTimes > 0)
 	{
-		auto dur = abs(duration.count());
+		uint64_t dur = abs(duration.count());
 		if (dur > nMax)
 		{
 			nMax = dur;

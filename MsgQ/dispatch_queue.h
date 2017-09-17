@@ -61,7 +61,7 @@ public:
 		}
 		Event_Entry & operator=(const Event_Entry &o)
 		{
-			if (this == &o)
+			if (this != &o)
 			{
 				this->id_ = o.id_;
 				this->timeout_ = o.timeout_;
@@ -74,7 +74,7 @@ public:
 		}
 		Event_Entry & operator=(Event_Entry &&o)
 		{
-			if (this == &o)
+			if (this != &o)
 			{
 				this->id_ = o.id_;
 				this->timeout_ = o.timeout_;
