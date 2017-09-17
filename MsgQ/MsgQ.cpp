@@ -61,7 +61,7 @@ int main()
 	daily_logger->info("main");
 	//g_dspq.SetTimer(1000, true, TestTimer, 1000);
 	//g_dspq.SetTimer(1500, true, TestTimer, 1500);
-	for (int i = 0; i < 10000; i++)
+	for (int i = 0; i < 1000000; i++)
 	{
 		DispatchQueue::GetDefaultDispatchQueue().DispatchAsync(TestMsg);
 	}

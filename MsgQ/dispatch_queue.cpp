@@ -102,19 +102,29 @@ void DispatchQueue::DispatchThreadProc()
 	work_queue_cond_.notify_one();
 	work_queue_thread_started = true;
 
+	decltype(work_queue_) dq;
 	while (quit_ == false)
 	{
 		work_queue_cond_.wait(work_queue_lock, [&] { return !work_queue_.empty(); });
-		while (!work_queue_.empty())
-		{
-			auto work = std::move(work_queue_.back());
-			work_queue_.pop_back();
+		/*	while (!work_queue_.empty())
+			{
+				auto work = std::move(work_queue_.back());
+				work_queue_.pop_back();
 
-			work_queue_lock.unlock();
+				work_queue_lock.unlock();
+				if (work.event_handler_)
+					work.event_handler_();
+				work_queue_lock.lock();
+			}*/
+		
+		dq = std::move(work_queue_);
+		work_queue_lock.unlock();
+		for (auto &work : dq)
+		{
 			if (work.event_handler_)
 				work.event_handler_();
-			work_queue_lock.lock();
 		}
+		work_queue_lock.lock();
 	}
 
 }
