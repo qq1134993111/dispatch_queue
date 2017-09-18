@@ -10,7 +10,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <future>
-
+#include "concurrentqueue.h"
 class DispatchQueue
 {
 public:
@@ -25,7 +25,7 @@ public:
 		bool repeat_;
 		EventFunc event_handler_;
 		bool from_timer_;
-
+		Event_Entry() {}
 		Event_Entry(uint64_t id,
 			uint64_t timeout,
 			time_point next_run,
@@ -118,7 +118,7 @@ public:
 		std::function<void()> task = func;
 		DispatchAsync(std::move(task));
 	}
-	void DispatchSync(std::function< void() > func);
+	
 	template<class F, class... Args>
 	void DispatchSync(F&& f, Args&&... args)
 	{
@@ -186,9 +186,9 @@ private:
 			std::thread t1(&DispatchQueue::TimerThreadProc, this);
 			timer_thread_ = std::move(t1);
 
-			std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
+			//std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
 			std::unique_lock<decltype(timer_mtx_)> timer_lock(timer_mtx_);
-			work_queue_cond_.wait(work_queue_lock, [this] { return work_queue_thread_started.load(); });
+			//work_queue_cond_.wait(work_queue_lock, [this] { return work_queue_thread_started.load(); });
 			timer_cond_.wait(timer_lock, [this] { return timer_thread_started_.load(); });
 		}
 		catch (const std::exception&)
@@ -207,9 +207,10 @@ private:
 	std::atomic< bool > timer_thread_started_;
 	std::atomic<bool> quit_;
 
-	std::mutex work_queue_mtx_;
+	/*std::mutex work_queue_mtx_;
 	std::condition_variable work_queue_cond_;
-	std::deque< Event_Entry> work_queue_;
+	std::deque< Event_Entry> work_queue_;*/
+	moodycamel::ConcurrentQueue<Event_Entry> work_concurrentqueue_;
 
 	std::mutex timer_mtx_;
 	std::condition_variable timer_cond_;

@@ -1,7 +1,7 @@
 #include "stdafx.h"
 #include "dispatch_queue.h"
 #include<algorithm>
-
+#include <vector>
 DispatchQueue::DispatchQueue() :timer_thread_started_(false), work_queue_thread_started(false),quit_(false), generate_timer_id_(0), fall_through_(false)
 {
 	InitThread();
@@ -16,36 +16,12 @@ DispatchQueue::~DispatchQueue()
 
 void DispatchQueue::DispatchAsync(std::function< void() > func)
 {
-	std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
+	/*std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
 	work_queue_.push_front(Event_Entry(0, 0, time_point(), 0, std::move(func), false));
-	work_queue_cond_.notify_one();
+	work_queue_cond_.notify_one();*/
+	work_concurrentqueue_.enqueue(Event_Entry(0, 0, time_point(), 0, std::move(func), false));
 }
 
-void DispatchQueue::DispatchSync(std::function<void()> func)
-{
-	std::mutex sync_mtx;
-	std::unique_lock< decltype(sync_mtx) > sync_lock(sync_mtx);
-	std::condition_variable sync_cond;
-	std::atomic< bool > completed(false);
-
-	{
-		std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
-
-		work_queue_.push_front(Event_Entry(0, 0, time_point(), 0, move(func), false));
-
-		work_queue_.push_front(Event_Entry(0, 0, time_point(), 0, [&] {
-
-			std::unique_lock<std::mutex> sync_cb_lock(sync_mtx);
-			completed = true;
-			sync_cond.notify_one();
-
-		}, false));
-
-		work_queue_cond_.notify_one();
-	}
-
-	sync_cond.wait(sync_lock, [&] { return completed.load(); });
-}
 
 uint64_t DispatchQueue::SetTimer(uint64_t milliseconds_timeout, EventFunc fun, bool repeat)
 {
@@ -98,33 +74,22 @@ bool DispatchQueue::CancelTimer(uint64_t timer_id)
 
 void DispatchQueue::DispatchThreadProc()
 {
-	std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
-	work_queue_cond_.notify_one();
+	//std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
+	//work_queue_cond_.notify_one();
 	work_queue_thread_started = true;
 
-	decltype(work_queue_) dq;
+	//decltype(work_queue_) dq;
+	std::vector<Event_Entry> vEvent(10240);
 	while (quit_ == false)
 	{
-		work_queue_cond_.wait(work_queue_lock, [&] { return !work_queue_.empty(); });
-		/*	while (!work_queue_.empty())
-			{
-				auto work = std::move(work_queue_.back());
-				work_queue_.pop_back();
-
-				work_queue_lock.unlock();
-				if (work.event_handler_)
-					work.event_handler_();
-				work_queue_lock.lock();
-			}*/
-		
-		dq = std::move(work_queue_);
-		work_queue_lock.unlock();
-		for (auto &work : dq)
+		size_t len=work_concurrentqueue_.try_dequeue_bulk(vEvent.begin(), vEvent.size());
+		for (size_t i=0;i<len;i++)
 		{
-			if (work.event_handler_)
-				work.event_handler_();
+			if (vEvent[i].event_handler_)
+			{
+				vEvent[i].event_handler_();
+			}
 		}
-		work_queue_lock.lock();
 	}
 
 }
@@ -162,7 +127,7 @@ void DispatchQueue::TimerThreadProc()
 				//work.event_handler_();
 				{
 					//²åÈë¶ÓÁÐ
-					std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
+					/*std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
 
 					auto where = std::find_if(work_queue_.rbegin(),
 						work_queue_.rend(),
@@ -170,7 +135,8 @@ void DispatchQueue::TimerThreadProc()
 
 					work_queue_.insert(where.base(), work);
 
-					work_queue_cond_.notify_one();
+					work_queue_cond_.notify_one();*/
+					work_concurrentqueue_.enqueue(work);
 
 				}
 
