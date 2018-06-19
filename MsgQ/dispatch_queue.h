@@ -17,71 +17,74 @@ public:
 	using  EventFunc = std::function<void()>;
 	using time_point = std::chrono::steady_clock::time_point;
 
+	enum class EntryType:uint8_t
+	{
+	   kMsg=0,
+	   kSingleTimer,
+	   kMultipleTimer
+	};
+
 	struct Event_Entry
 	{
+		EntryType type_;
 		uint64_t id_;
 		uint64_t timeout_;
-		time_point next_run_;
-		bool repeat_;
+		time_point next_run_;	
 		EventFunc event_handler_;
-		bool from_timer_;
 
-		Event_Entry(uint64_t id,
+		Event_Entry(EntryType type,
+			uint64_t id,
 			uint64_t timeout,
 			time_point next_run,
-			bool repeat,
-			EventFunc event_handler,
-			bool from_timer = true) :
+			EventFunc event_handler):
+			type_(type),
 			id_(id),
 			timeout_(timeout),
-			next_run_(next_run),
-			repeat_(repeat),
-			event_handler_(event_handler),
-			from_timer_(from_timer)
+			next_run_(next_run),		
+			event_handler_(event_handler)
 		{
+
 		}
 
 		Event_Entry(const Event_Entry &o)
 		{
+			this->type_ = o.type_;
 			this->id_ = o.id_;
 			this->timeout_ = o.timeout_;
 			this->next_run_ = o.next_run_;
-			this->repeat_ = o.repeat_;
 			this->event_handler_ = o.event_handler_;
-			this->from_timer_ = o.from_timer_;
+		
 		}
 		Event_Entry(Event_Entry &&o)
 		{
+			this->type_ = o.type_;
 			this->id_ = o.id_;
 			this->timeout_ = o.timeout_;
 			this->next_run_ = o.next_run_;
-			this->repeat_ = o.repeat_;
 			this->event_handler_ = std::move(o.event_handler_);
-			this->from_timer_ = o.from_timer_;
 		}
 		Event_Entry & operator=(const Event_Entry &o)
 		{
 			if (this != &o)
 			{
+				this->type_ = o.type_;
 				this->id_ = o.id_;
 				this->timeout_ = o.timeout_;
 				this->next_run_ = o.next_run_;
-				this->repeat_ = o.repeat_;
 				this->event_handler_ = o.event_handler_;
-				this->from_timer_ = o.from_timer_;
 			}
+
 			return *this;
 		}
 		Event_Entry & operator=(Event_Entry &&o)
 		{
 			if (this != &o)
 			{
+				this->type_ = o.type_;
 				this->id_ = o.id_;
 				this->timeout_ = o.timeout_;
 				this->next_run_ = o.next_run_;
-				this->repeat_ = o.repeat_;
 				this->event_handler_ = std::move(o.event_handler_);
-				this->from_timer_ = o.from_timer_;
 			}
 
 			return *this;
@@ -203,8 +206,8 @@ private:
 	std::thread  work_queue_thread_;
 	std::thread  timer_thread_;
 
-	std::atomic< bool > work_queue_thread_started;
-	std::atomic< bool > timer_thread_started_;
+	std::atomic<bool> work_queue_thread_started;
+	std::atomic<bool> timer_thread_started_;
 	std::atomic<bool> quit_;
 
 	std::mutex work_queue_mtx_;

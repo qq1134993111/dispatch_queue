@@ -1,4 +1,4 @@
-#include "stdafx.h"
+
 #include "dispatch_queue.h"
 #include<algorithm>
 
@@ -17,7 +17,7 @@ DispatchQueue::~DispatchQueue()
 void DispatchQueue::DispatchAsync(std::function< void() > func)
 {
 	std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
-	work_queue_.push_front(Event_Entry(0, 0, time_point(), 0, std::move(func), false));
+	work_queue_.push_front(Event_Entry(EntryType::kMsg,0,0,time_point(), std::move(func)));
 	work_queue_cond_.notify_one();
 }
 
@@ -31,15 +31,16 @@ void DispatchQueue::DispatchSync(std::function<void()> func)
 	{
 		std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
 
-		work_queue_.push_front(Event_Entry(0, 0, time_point(), 0, move(func), false));
+		work_queue_.push_front(Event_Entry(EntryType::kMsg,0, 0, time_point(), move(func)));
 
-		work_queue_.push_front(Event_Entry(0, 0, time_point(), 0, [&] {
+		work_queue_.push_front(Event_Entry(EntryType::kMsg,0, 0, time_point(), [&]() 
+		{
 
 			std::unique_lock<std::mutex> sync_cb_lock(sync_mtx);
 			completed = true;
 			sync_cond.notify_one();
 
-		}, false));
+		}));
 
 		work_queue_cond_.notify_one();
 	}
@@ -52,8 +53,11 @@ uint64_t DispatchQueue::SetTimer(uint64_t milliseconds_timeout, EventFunc fun, b
 	if (!IsRunning())
 		return 0;
 
+	EntryType type;
+	type = repeat ? EntryType::kMultipleTimer : EntryType::kSingleTimer;
+
 	std::unique_lock<decltype(timer_mtx_)> timer_lock(timer_mtx_);
-	Event_Entry event_entry(++generate_timer_id_, milliseconds_timeout, std::chrono::steady_clock::now() + std::chrono::milliseconds(milliseconds_timeout), repeat, std::move(fun), true);
+	Event_Entry event_entry(type,++generate_timer_id_, milliseconds_timeout, std::chrono::steady_clock::now() + std::chrono::milliseconds(milliseconds_timeout), std::move(fun));
 	if (!timers_set_.empty() && event_entry.next_run_ < timers_set_.begin()->next_run_)
 	{
 		fall_through_ = true;
@@ -103,7 +107,7 @@ void DispatchQueue::DispatchThreadProc()
 	work_queue_thread_started = true;
 
 	decltype(work_queue_) dq;
-	while (quit_ == false)
+	while (!quit_)
 	{
 		work_queue_cond_.wait(work_queue_lock, [&] { return !work_queue_.empty(); });
 		/*	while (!work_queue_.empty())
@@ -166,7 +170,7 @@ void DispatchQueue::TimerThreadProc()
 
 					auto where = std::find_if(work_queue_.rbegin(),
 						work_queue_.rend(),
-						[](Event_Entry const &e) { return !e.from_timer_; });
+						[](Event_Entry const &e) { return !(e.type_==EntryType::kSingleTimer|| e.type_ == EntryType::kMultipleTimer); });
 
 					work_queue_.insert(where.base(), work);
 
@@ -175,7 +179,7 @@ void DispatchQueue::TimerThreadProc()
 				}
 
 				timer_lock.lock();
-				if (work.repeat_)
+				if (work.type_==EntryType::kMultipleTimer)
 				{
 					work.next_run_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(work.timeout_);
 
