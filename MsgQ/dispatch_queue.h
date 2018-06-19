@@ -24,7 +24,7 @@ public:
 	   kMultipleTimer
 	};
 
-	struct Event_Entry
+	struct EventEntry
 	{
 		EntryType type_;
 		uint64_t id_;
@@ -32,7 +32,7 @@ public:
 		time_point next_run_;	
 		EventFunc event_handler_;
 
-		Event_Entry(EntryType type,
+		EventEntry(EntryType type,
 			uint64_t id,
 			uint64_t timeout,
 			time_point next_run,
@@ -46,7 +46,7 @@ public:
 
 		}
 
-		Event_Entry(const Event_Entry &o)
+		EventEntry(const EventEntry &o)
 		{
 			this->type_ = o.type_;
 			this->id_ = o.id_;
@@ -55,7 +55,7 @@ public:
 			this->event_handler_ = o.event_handler_;
 		
 		}
-		Event_Entry(Event_Entry &&o)
+		EventEntry(EventEntry &&o)
 		{
 			this->type_ = o.type_;
 			this->id_ = o.id_;
@@ -63,7 +63,7 @@ public:
 			this->next_run_ = o.next_run_;
 			this->event_handler_ = std::move(o.event_handler_);
 		}
-		Event_Entry & operator=(const Event_Entry &o)
+		EventEntry & operator=(const EventEntry &o)
 		{
 			if (this != &o)
 			{
@@ -76,7 +76,7 @@ public:
 
 			return *this;
 		}
-		Event_Entry & operator=(Event_Entry &&o)
+		EventEntry & operator=(EventEntry &&o)
 		{
 			if (this != &o)
 			{
@@ -93,7 +93,7 @@ public:
 	};
 	struct CompareLessNextRun
 	{
-		bool operator()(const Event_Entry & left, const Event_Entry & right) const
+		bool operator()(const EventEntry & left, const EventEntry & right) const
 		{
 			return left.next_run_ < right.next_run_;
 		}
@@ -212,11 +212,11 @@ private:
 
 	std::mutex work_queue_mtx_;
 	std::condition_variable work_queue_cond_;
-	std::deque< Event_Entry> work_queue_;
+	std::deque< EventEntry> work_queue_;
 
 	std::mutex timer_mtx_;
 	std::condition_variable timer_cond_;
-	std::multiset<Event_Entry, CompareLessNextRun> timers_set_;
+	std::multiset<EventEntry, CompareLessNextRun> timers_set_;
 
 	uint64_t generate_timer_id_;
 	std::atomic<bool> fall_through_;

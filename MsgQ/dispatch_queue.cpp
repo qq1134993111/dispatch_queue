@@ -17,7 +17,7 @@ DispatchQueue::~DispatchQueue()
 void DispatchQueue::DispatchAsync(std::function< void() > func)
 {
 	std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
-	work_queue_.push_front(Event_Entry(EntryType::kMsg,0,0,time_point(), std::move(func)));
+	work_queue_.push_front(EventEntry(EntryType::kMsg,0,0,time_point(), std::move(func)));
 	work_queue_cond_.notify_one();
 }
 
@@ -31,9 +31,9 @@ void DispatchQueue::DispatchSync(std::function<void()> func)
 	{
 		std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
 
-		work_queue_.push_front(Event_Entry(EntryType::kMsg,0, 0, time_point(), move(func)));
+		work_queue_.push_front(EventEntry(EntryType::kMsg,0, 0, time_point(), move(func)));
 
-		work_queue_.push_front(Event_Entry(EntryType::kMsg,0, 0, time_point(), [&]() 
+		work_queue_.push_front(EventEntry(EntryType::kMsg,0, 0, time_point(), [&]() 
 		{
 
 			std::unique_lock<std::mutex> sync_cb_lock(sync_mtx);
@@ -57,7 +57,7 @@ uint64_t DispatchQueue::SetTimer(uint64_t milliseconds_timeout, EventFunc fun, b
 	type = repeat ? EntryType::kMultipleTimer : EntryType::kSingleTimer;
 
 	std::unique_lock<decltype(timer_mtx_)> timer_lock(timer_mtx_);
-	Event_Entry event_entry(type,++generate_timer_id_, milliseconds_timeout, std::chrono::steady_clock::now() + std::chrono::milliseconds(milliseconds_timeout), std::move(fun));
+	EventEntry event_entry(type,++generate_timer_id_, milliseconds_timeout, std::chrono::steady_clock::now() + std::chrono::milliseconds(milliseconds_timeout), std::move(fun));
 	if (!timers_set_.empty() && event_entry.next_run_ < timers_set_.begin()->next_run_)
 	{
 		fall_through_ = true;
@@ -74,7 +74,7 @@ bool DispatchQueue::CancelTimer(uint64_t timer_id)
 		return false;
 
 	std::unique_lock<decltype(timer_mtx_)> timer_lock(timer_mtx_);
-	auto fun = [&](const Event_Entry& event_entry) {  return event_entry.id_ == timer_id; };
+	auto fun = [&](const EventEntry& event_entry) {  return event_entry.id_ == timer_id; };
 	auto it = std::find_if(timers_set_.begin(), timers_set_.end(), fun);
 	if (it != timers_set_.end())
 	{
@@ -170,7 +170,7 @@ void DispatchQueue::TimerThreadProc()
 
 					auto where = std::find_if(work_queue_.rbegin(),
 						work_queue_.rend(),
-						[](Event_Entry const &e) { return !(e.type_==EntryType::kSingleTimer|| e.type_ == EntryType::kMultipleTimer); });
+						[](EventEntry const &e) { return !(e.type_==EntryType::kSingleTimer|| e.type_ == EntryType::kMultipleTimer); });
 
 					work_queue_.insert(where.base(), work);
 
