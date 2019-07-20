@@ -14,14 +14,21 @@ DispatchQueue::~DispatchQueue()
 	Join();
 }
 
-void DispatchQueue::DispatchAsync(std::function< void() > func)
+void DispatchQueue::DispatchAsync(std::function< void() >&& func)
 {
 	std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
-	work_queue_.push_front(EventEntry(EntryType::kMsg,0,0,time_point(), std::move(func)));
+	work_queue_.push_front(EventEntry(EntryType::kMsg, 0, 0, time_point(), std::move(func)));
 	work_queue_cond_.notify_one();
 }
 
-void DispatchQueue::DispatchSync(std::function<void()> func)
+void DispatchQueue::DispatchAsync(const std::function< void() >& func)
+{
+	std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
+	work_queue_.push_front(EventEntry(EntryType::kMsg, 0, 0, time_point(), func));
+	work_queue_cond_.notify_one();
+}
+
+void DispatchQueue::DispatchSync(std::function<void()>&& func)
 {
 	std::mutex sync_mtx;
 	std::unique_lock< decltype(sync_mtx) > sync_lock(sync_mtx);
@@ -31,16 +38,41 @@ void DispatchQueue::DispatchSync(std::function<void()> func)
 	{
 		std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
 
-		work_queue_.push_front(EventEntry(EntryType::kMsg,0, 0, time_point(), move(func)));
+		work_queue_.push_front(EventEntry(EntryType::kMsg, 0, 0, time_point(), move(func)));
 
 		work_queue_.push_front(EventEntry(EntryType::kMsg,0, 0, time_point(), [&]() 
 		{
-
 			std::unique_lock<std::mutex> sync_cb_lock(sync_mtx);
 			completed = true;
 			sync_cond.notify_one();
 
 		}));
+
+		work_queue_cond_.notify_one();
+	}
+
+	sync_cond.wait(sync_lock, [&] { return completed.load(); });
+}
+
+void DispatchQueue::DispatchSync(const std::function<void()>& func)
+{
+	std::mutex sync_mtx;
+	std::unique_lock< decltype(sync_mtx) > sync_lock(sync_mtx);
+	std::condition_variable sync_cond;
+	std::atomic< bool > completed(false);
+
+	{
+		std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
+
+		work_queue_.push_front(EventEntry(EntryType::kMsg, 0, 0, time_point(), func));
+
+		work_queue_.push_front(EventEntry(EntryType::kMsg, 0, 0, time_point(), [&]()
+			{
+				std::unique_lock<std::mutex> sync_cb_lock(sync_mtx);
+				completed = true;
+				sync_cond.notify_one();
+
+			}));
 
 		work_queue_cond_.notify_one();
 	}

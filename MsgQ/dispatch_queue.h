@@ -41,7 +41,7 @@ public:
 			id_(id),
 			timeout_(timeout),
 			next_run_(next_run),		
-			event_handler_(event_handler)
+			event_handler_(std::move(event_handler))
 		{
 
 		}
@@ -113,20 +113,21 @@ public:
 	DispatchQueue & operator=(const DispatchQueue &) = delete;
 	DispatchQueue & operator=(DispatchQueue &&) = delete;
 
-	void DispatchAsync(std::function< void() > func);
+	void DispatchAsync(std::function< void() >&& func);
+	void DispatchAsync(const std::function< void() >& func);
 	template<class F, class... Args>
 	void DispatchAsync(F&& f, Args&&... args)
 	{
-		auto func = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
-		std::function<void()> task = func;
+		std::function<void()> task= std::bind(std::forward<F>(f), std::forward<Args>(args)...);
 		DispatchAsync(std::move(task));
 	}
-	void DispatchSync(std::function< void() > func);
+	void DispatchSync(std::function< void() >&& func);
+	void DispatchSync(const std::function< void() >& func);
 	template<class F, class... Args>
 	void DispatchSync(F&& f, Args&&... args)
 	{
-		auto func = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
-		std::function<void()> task = func;
+		std::function<void()> task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
+		
 		DispatchSync(std::move(task));
 	}
 
@@ -152,9 +153,8 @@ public:
 	template<class F, class... Args>
 	uint64_t SetTimer(uint64_t milliseconds_timeout, bool repeat, F&& f, Args&&... args)
 	{
-		auto func = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
-		std::function<void()> task = func;
-
+		std::function<void()> task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
+		
 		return SetTimer(milliseconds_timeout, task, repeat);
 	}
 	bool CancelTimer(uint64_t timer_id);
@@ -183,8 +183,8 @@ private:
 	{
 		try
 		{
-			std::thread t(&DispatchQueue::DispatchThreadProc, this);
-			work_queue_thread_ = std::move(t);
+			
+			work_queue_thread_ = std::thread(&DispatchQueue::DispatchThreadProc, this);
 
 			std::thread t1(&DispatchQueue::TimerThreadProc, this);
 			timer_thread_ = std::move(t1);
