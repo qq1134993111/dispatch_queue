@@ -4,157 +4,157 @@
 
 DispatchQueue::DispatchQueue() :timer_thread_started_(false), work_queue_thread_started(false), quit_(false), generate_timer_id_(0), fall_through_(false)
 {
-	InitThread();
+    InitThread();
 }
 
 
 DispatchQueue::~DispatchQueue()
 {
-	Stop();
-	Join();
+    Stop();
+    Join();
 }
 
 
 uint64_t DispatchQueue::SetTimer(uint64_t milliseconds_timeout, EventFunc fun, bool repeat)
 {
-	if (!IsRunning())
-		return 0;
+    if (!IsRunning())
+        return 0;
 
-	EntryType type;
-	type = repeat ? EntryType::kMultipleTimer : EntryType::kSingleTimer;
+    EntryType type;
+    type = repeat ? EntryType::kMultipleTimer : EntryType::kSingleTimer;
 
-	std::unique_lock<decltype(timer_mtx_)> timer_lock(timer_mtx_);
-	EventEntry event_entry(type, ++generate_timer_id_, milliseconds_timeout, std::chrono::steady_clock::now() + std::chrono::milliseconds(milliseconds_timeout), std::move(fun));
-	if (!timers_set_.empty() && event_entry.next_run_ < timers_set_.begin()->next_run_)
-	{
-		fall_through_ = true;
-	}
-	timers_set_.insert(std::move(event_entry));
-	timer_cond_.notify_one();
+    std::unique_lock<decltype(timer_mtx_)> timer_lock(timer_mtx_);
+    EventEntry event_entry(type, ++generate_timer_id_, milliseconds_timeout, std::chrono::steady_clock::now() + std::chrono::milliseconds(milliseconds_timeout), std::move(fun));
+    if (!timers_set_.empty() && event_entry.next_run_ < timers_set_.begin()->next_run_)
+    {
+        fall_through_ = true;
+    }
+    timers_set_.insert(std::move(event_entry));
+    timer_cond_.notify_one();
 
-	return generate_timer_id_;
+    return generate_timer_id_;
 }
 
 bool DispatchQueue::CancelTimer(uint64_t timer_id)
 {
-	if (!IsRunning())
-		return false;
+    if (!IsRunning())
+        return false;
 
-	std::unique_lock<decltype(timer_mtx_)> timer_lock(timer_mtx_);
-	auto fun = [&](const EventEntry& event_entry) {  return event_entry.id_ == timer_id; };
-	auto it = std::find_if(timers_set_.begin(), timers_set_.end(), fun);
-	if (it != timers_set_.end())
-	{
-		if (it == timers_set_.begin())
-		{
-			timers_set_.erase(it);
-			fall_through_ = true;
-			timer_cond_.notify_one();
+    std::unique_lock<decltype(timer_mtx_)> timer_lock(timer_mtx_);
+    auto fun = [&](const EventEntry& event_entry) {  return event_entry.id_ == timer_id; };
+    auto it = std::find_if(timers_set_.begin(), timers_set_.end(), fun);
+    if (it != timers_set_.end())
+    {
+        if (it == timers_set_.begin())
+        {
+            timers_set_.erase(it);
+            fall_through_ = true;
+            timer_cond_.notify_one();
 
-			return true;
-		}
-		else
-		{
-			timers_set_.erase(it);
-			return true;
-		}
-	}
-	else
-	{
-		return false;
-	}
+            return true;
+        }
+        else
+        {
+            timers_set_.erase(it);
+            return true;
+        }
+    }
+    else
+    {
+        return false;
+    }
 
-	return true;
+    return true;
 }
 
 void DispatchQueue::DispatchThreadProc()
 {
-	std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
-	work_queue_cond_.notify_one();
-	work_queue_thread_started = true;
+    std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
+    work_queue_cond_.notify_one();
+    work_queue_thread_started = true;
 
-	decltype(work_queue_) dq;
-	while (!quit_)
-	{
-		work_queue_cond_.wait(work_queue_lock, [&] { return !work_queue_.empty(); });
-		/*	while (!work_queue_.empty())
-			{
-				auto work = std::move(work_queue_.back());
-				work_queue_.pop_back();
+    decltype(work_queue_) dq;
+    while (!quit_)
+    {
+        work_queue_cond_.wait(work_queue_lock, [&] { return !work_queue_.empty(); });
+        /*	while (!work_queue_.empty())
+            {
+                auto work = std::move(work_queue_.back());
+                work_queue_.pop_back();
 
-				work_queue_lock.unlock();
-				if (work.event_handler_)
-					work.event_handler_();
-				work_queue_lock.lock();
-			}*/
+                work_queue_lock.unlock();
+                if (work.event_handler_)
+                    work.event_handler_();
+                work_queue_lock.lock();
+            }*/
 
-		dq = std::move(work_queue_);
-		work_queue_lock.unlock();
-		for (auto& work : dq)
-		{
-			if (work.event_handler_)
-				work.event_handler_();
-		}
-		work_queue_lock.lock();
-	}
+        dq = std::move(work_queue_);
+        work_queue_lock.unlock();
+        for (auto& work : dq)
+        {
+            if (work.event_handler_)
+                work.event_handler_();
+        }
+        work_queue_lock.lock();
+    }
 
 }
 
 void DispatchQueue::TimerThreadProc()
 {
-	std::unique_lock< decltype(timer_mtx_) > timer_lock(timer_mtx_);
-	timer_cond_.notify_one();
-	timer_thread_started_ = true;
+    std::unique_lock< decltype(timer_mtx_) > timer_lock(timer_mtx_);
+    timer_cond_.notify_one();
+    timer_thread_started_ = true;
 
-	while (quit_ == false)
-	{
-		if (timers_set_.empty())
-		{
-			timer_cond_.wait(timer_lock, [&] { return quit_ || !timers_set_.empty(); });
-		}
+    while (quit_ == false)
+    {
+        if (timers_set_.empty())
+        {
+            timer_cond_.wait(timer_lock, [&] { return quit_ || !timers_set_.empty(); });
+        }
 
-		while (!timers_set_.empty())
-		{
-			auto  work = *timers_set_.begin();
+        while (!timers_set_.empty())
+        {
+            auto  work = *timers_set_.begin();
 
-			if (timer_cond_.wait_until(timer_lock, work.next_run_, [this] { return quit_.load() || fall_through_.load(); }))
-			{
-				//等待条件完成
+            if (timer_cond_.wait_until(timer_lock, work.next_run_, [this] { return quit_.load() || fall_through_.load(); }))
+            {
+                //等待条件完成
 
-				fall_through_ = false;
+                fall_through_ = false;
 
-				break;
-			}
-			else
-			{
-				//timeout
-				timers_set_.erase(timers_set_.begin());
-				timer_lock.unlock();
-				//work.event_handler_();
-				{
-					//插入队列
-					std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
+                break;
+            }
+            else
+            {
+                //timeout
+                timers_set_.erase(timers_set_.begin());
+                timer_lock.unlock();
+              
+                {
+                    //插入队列
+                    std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
 
-					auto where = std::find_if(work_queue_.rbegin(),
-						work_queue_.rend(),
-						[](EventEntry const& e) { return !(e.type_ == EntryType::kSingleTimer || e.type_ == EntryType::kMultipleTimer); });
+                    auto where = std::find_if(work_queue_.rbegin(),
+                        work_queue_.rend(),
+                        [](EventEntry const& e) { return !(e.type_ == EntryType::kSingleTimer || e.type_ == EntryType::kMultipleTimer); });
 
-					work_queue_.insert(where.base(), work);
+                    work_queue_.insert(where.base(), work);
 
-					work_queue_cond_.notify_one();
+                    work_queue_cond_.notify_one();
 
-				}
+                }
 
-				timer_lock.lock();
-				if (work.type_ == EntryType::kMultipleTimer)
-				{
-					work.next_run_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(work.timeout_);
+                timer_lock.lock();
+                if (work.type_ == EntryType::kMultipleTimer)
+                {
+                    work.next_run_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(work.timeout_);
 
-					timers_set_.insert(std::move(work));
-				}
+                    timers_set_.insert(std::move(work));
+                }
 
-			}
-		}
-	}
+            }
+        }
+    }
 
 }
