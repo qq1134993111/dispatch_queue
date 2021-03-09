@@ -69,25 +69,18 @@ bool DispatchQueue::CancelTimer(uint64_t timer_id)
 
 void DispatchQueue::DispatchThreadProc()
 {
+    {
+        work_queue_thread_started = true;
+        work_queue_cond_.notify_one();
+    }
+
+
     std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
-    work_queue_cond_.notify_one();
-    work_queue_thread_started = true;
 
     decltype(work_queue_) dq;
     while (!quit_)
     {
         work_queue_cond_.wait(work_queue_lock, [&] { return !work_queue_.empty(); });
-        /*	while (!work_queue_.empty())
-            {
-                auto work = std::move(work_queue_.back());
-                work_queue_.pop_back();
-
-                work_queue_lock.unlock();
-                if (work.event_handler_)
-                    work.event_handler_();
-                work_queue_lock.lock();
-            }*/
-
         dq = std::move(work_queue_);
         work_queue_lock.unlock();
         for (auto& work : dq)
@@ -102,11 +95,14 @@ void DispatchQueue::DispatchThreadProc()
 
 void DispatchQueue::TimerThreadProc()
 {
-    std::unique_lock< decltype(timer_mtx_) > timer_lock(timer_mtx_);
-    timer_cond_.notify_one();
-    timer_thread_started_ = true;
+    {
+        timer_thread_started_ = true;
+        timer_cond_.notify_one();
+    }
 
-    while (quit_ == false)
+
+    std::unique_lock< decltype(timer_mtx_) > timer_lock(timer_mtx_);
+    while (!quit_)
     {
         if (timers_set_.empty())
         {
@@ -151,6 +147,7 @@ void DispatchQueue::TimerThreadProc()
 
                 }
 
+                timer_lock.lock();
             }
         }
     }
