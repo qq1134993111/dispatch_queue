@@ -2,7 +2,7 @@
 #include "dispatch_queue.h"
 #include<algorithm>
 #include <vector>
-DispatchQueue::DispatchQueue() :timer_thread_started_(false), work_queue_thread_started(false),quit_(false), generate_timer_id_(0), fall_through_(false)
+DispatchQueue::DispatchQueue() :timer_thread_started_(false), work_queue_thread_started(false), quit_(false), generate_timer_id_(0), fall_through_(false)
 {
 	InitThread();
 }
@@ -14,13 +14,6 @@ DispatchQueue::~DispatchQueue()
 	Join();
 }
 
-void DispatchQueue::DispatchAsync(std::function< void() > func)
-{
-	/*std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
-	work_queue_.push_front(Event_Entry(0, 0, time_point(), 0, std::move(func), false));
-	work_queue_cond_.notify_one();*/
-	work_concurrentqueue_.enqueue(Event_Entry(0, 0, time_point(), 0, std::move(func), false));
-}
 
 
 uint64_t DispatchQueue::SetTimer(uint64_t milliseconds_timeout, EventFunc fun, bool repeat)
@@ -82,8 +75,8 @@ void DispatchQueue::DispatchThreadProc()
 	std::vector<Event_Entry> vEvent(10240);
 	while (quit_ == false)
 	{
-		size_t len=work_concurrentqueue_.try_dequeue_bulk(vEvent.begin(), vEvent.size());
-		for (size_t i=0;i<len;i++)
+		size_t len = work_concurrentqueue_.try_dequeue_bulk(vEvent.begin(), vEvent.size());
+		for (size_t i = 0; i < len; i++)
 		{
 			if (vEvent[i].event_handler_)
 			{

@@ -20,6 +20,16 @@ void TestMsg()
 	daily_logger->info("TestMsg");
 }
 
+int TestMsgSync()
+{
+	std::cout << "TestMsgSync \n";
+	return 42;
+}
+int TestMsgSyncReturn(int i)
+{
+	return i;
+}
+
 void TestTimer(uint32_t index)
 {
 	//daily_logger->info("TestTimer:{}",index);
@@ -59,16 +69,21 @@ int main()
 {
 	spdlog::set_pattern("*** [%Y-%m-%d %H:%M:%S,%f] %v ***");
 	daily_logger->info("main");
-	//g_dspq.SetTimer(1000, true, TestTimer, 1000);
-	//g_dspq.SetTimer(1500, true, TestTimer, 1500);
-	for (int i = 0; i < 1000000; i++)
+
+	for (int i = 0; i < 10; i++)
 	{
 		DispatchQueue::GetDefaultDispatchQueue().DispatchAsync(TestMsg);
+		DispatchQueue::GetDefaultDispatchQueue().DispatchSync(TestMsgSync);
+		DispatchQueue::GetDefaultDispatchQueue().DispatchSync(TestMsgSyncReturn, i);
+		auto f0 = DispatchQueue::GetDefaultDispatchQueue().Dispatch(TestMsgSync);
+		std::cout << "Dispatch:" << f0.get() << "\n";
+		auto f = DispatchQueue::GetDefaultDispatchQueue().Dispatch(TestMsgSyncReturn, i);
+		std::cout << "Dispatch:" << f.get() << "\n";
 	}
-	//g_dspq.SetTimer(2000, true, TestTimer, 2000);
-	//g_dspq.SetTimer(50, true, TestTimer, 50);
+
 	DispatchQueue::GetDefaultDispatchQueue().SetTimer(100, true, TestTimer, 100);
 	DispatchQueue::GetDefaultDispatchQueue().Join();
-    return 0;
+
+	return 0;
 }
 

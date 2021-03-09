@@ -41,7 +41,7 @@ public:
 		{
 		}
 
-		Event_Entry(const Event_Entry &o)
+		Event_Entry(const Event_Entry& o)
 		{
 			this->id_ = o.id_;
 			this->timeout_ = o.timeout_;
@@ -50,7 +50,7 @@ public:
 			this->event_handler_ = o.event_handler_;
 			this->from_timer_ = o.from_timer_;
 		}
-		Event_Entry(Event_Entry &&o)
+		Event_Entry(Event_Entry&& o)
 		{
 			this->id_ = o.id_;
 			this->timeout_ = o.timeout_;
@@ -59,7 +59,7 @@ public:
 			this->event_handler_ = std::move(o.event_handler_);
 			this->from_timer_ = o.from_timer_;
 		}
-		Event_Entry & operator=(const Event_Entry &o)
+		Event_Entry& operator=(const Event_Entry& o)
 		{
 			if (this != &o)
 			{
@@ -72,7 +72,7 @@ public:
 			}
 			return *this;
 		}
-		Event_Entry & operator=(Event_Entry &&o)
+		Event_Entry& operator=(Event_Entry&& o)
 		{
 			if (this != &o)
 			{
@@ -90,14 +90,14 @@ public:
 	};
 	struct CompareLessNextRun
 	{
-		bool operator()(const Event_Entry & left, const Event_Entry & right) const
+		bool operator()(const Event_Entry& left, const Event_Entry& right) const
 		{
 			return left.next_run_ < right.next_run_;
 		}
 	};
 
 	static DispatchQueue& GetDefaultDispatchQueue()
-	{ 
+	{
 		static DispatchQueue s_dispatchqueue;
 		return s_dispatchqueue;
 	}
@@ -105,12 +105,16 @@ public:
 	DispatchQueue();
 	~DispatchQueue();
 
-	DispatchQueue(const DispatchQueue &) = delete;
-	DispatchQueue(DispatchQueue &&) = delete;
-	DispatchQueue & operator=(const DispatchQueue &) = delete;
-	DispatchQueue & operator=(DispatchQueue &&) = delete;
+	DispatchQueue(const DispatchQueue&) = delete;
+	DispatchQueue(DispatchQueue&&) = delete;
+	DispatchQueue& operator=(const DispatchQueue&) = delete;
+	DispatchQueue& operator=(DispatchQueue&&) = delete;
 
-	void DispatchAsync(std::function< void() > func);
+	template<typename Fn>
+	void DispatchAsync(Fn&& func)
+	{
+		work_concurrentqueue_.enqueue(Event_Entry(0, 0, time_point(), 0, std::forward<Fn>(func), false));
+	}
 	template<class F, class... Args>
 	void DispatchAsync(F&& f, Args&&... args)
 	{
@@ -118,14 +122,38 @@ public:
 		std::function<void()> task = func;
 		DispatchAsync(std::move(task));
 	}
-	
+
+	template<typename Fn>
+	void DispatchSync(Fn&& func)
+	{
+		std::mutex sync_mtx;
+		std::unique_lock< decltype(sync_mtx) > sync_lock(sync_mtx);
+		std::condition_variable sync_cond;
+		std::atomic< bool > completed(false);
+
+		{
+			work_concurrentqueue_.enqueue(Event_Entry(0, 0, time_point(), 0, [&]()
+				{
+					std::forward<Fn>(func)();
+
+					std::unique_lock<std::mutex> sync_cb_lock(sync_mtx);
+					completed = true;
+					sync_cond.notify_one();
+
+				}, false));
+		}
+
+		sync_cond.wait(sync_lock, [&] { return completed.load(); });
+	}
+
 	template<class F, class... Args>
 	void DispatchSync(F&& f, Args&&... args)
 	{
-		auto func = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
-		std::function<void()> task = func;
+		std::function<void()> task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
+
 		DispatchSync(std::move(task));
 	}
+
 
 	template<class F, class... Args>
 	auto Dispatch(F&& f, Args&&... args)  -> std::future<typename std::result_of<F(Args...)>::type>
@@ -157,7 +185,7 @@ public:
 	bool CancelTimer(uint64_t timer_id);
 	bool IsRunning()
 	{
-		return (timer_thread_started_&&work_queue_thread_started && !quit_);
+		return (timer_thread_started_ && work_queue_thread_started && !quit_);
 	}
 	void Join()
 	{
