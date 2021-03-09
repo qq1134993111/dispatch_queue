@@ -2,7 +2,7 @@
 #include "dispatch_queue.h"
 #include<algorithm>
 
-DispatchQueue::DispatchQueue() :timer_thread_started_(false), work_queue_thread_started(false),quit_(false), generate_timer_id_(0), fall_through_(false)
+DispatchQueue::DispatchQueue() :timer_thread_started_(false), work_queue_thread_started(false), quit_(false), generate_timer_id_(0), fall_through_(false)
 {
 	InitThread();
 }
@@ -14,71 +14,6 @@ DispatchQueue::~DispatchQueue()
 	Join();
 }
 
-void DispatchQueue::DispatchAsync(std::function< void() >&& func)
-{
-	std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
-	work_queue_.push_front(EventEntry(EntryType::kMsg, 0, 0, time_point(), std::move(func)));
-	work_queue_cond_.notify_one();
-}
-
-void DispatchQueue::DispatchAsync(const std::function< void() >& func)
-{
-	std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
-	work_queue_.push_front(EventEntry(EntryType::kMsg, 0, 0, time_point(), func));
-	work_queue_cond_.notify_one();
-}
-
-void DispatchQueue::DispatchSync(std::function<void()>&& func)
-{
-	std::mutex sync_mtx;
-	std::unique_lock< decltype(sync_mtx) > sync_lock(sync_mtx);
-	std::condition_variable sync_cond;
-	std::atomic< bool > completed(false);
-
-	{
-		std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
-
-		work_queue_.push_front(EventEntry(EntryType::kMsg, 0, 0, time_point(), move(func)));
-
-		work_queue_.push_front(EventEntry(EntryType::kMsg,0, 0, time_point(), [&]() 
-		{
-			std::unique_lock<std::mutex> sync_cb_lock(sync_mtx);
-			completed = true;
-			sync_cond.notify_one();
-
-		}));
-
-		work_queue_cond_.notify_one();
-	}
-
-	sync_cond.wait(sync_lock, [&] { return completed.load(); });
-}
-
-void DispatchQueue::DispatchSync(const std::function<void()>& func)
-{
-	std::mutex sync_mtx;
-	std::unique_lock< decltype(sync_mtx) > sync_lock(sync_mtx);
-	std::condition_variable sync_cond;
-	std::atomic< bool > completed(false);
-
-	{
-		std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
-
-		work_queue_.push_front(EventEntry(EntryType::kMsg, 0, 0, time_point(), func));
-
-		work_queue_.push_front(EventEntry(EntryType::kMsg, 0, 0, time_point(), [&]()
-			{
-				std::unique_lock<std::mutex> sync_cb_lock(sync_mtx);
-				completed = true;
-				sync_cond.notify_one();
-
-			}));
-
-		work_queue_cond_.notify_one();
-	}
-
-	sync_cond.wait(sync_lock, [&] { return completed.load(); });
-}
 
 uint64_t DispatchQueue::SetTimer(uint64_t milliseconds_timeout, EventFunc fun, bool repeat)
 {
@@ -89,7 +24,7 @@ uint64_t DispatchQueue::SetTimer(uint64_t milliseconds_timeout, EventFunc fun, b
 	type = repeat ? EntryType::kMultipleTimer : EntryType::kSingleTimer;
 
 	std::unique_lock<decltype(timer_mtx_)> timer_lock(timer_mtx_);
-	EventEntry event_entry(type,++generate_timer_id_, milliseconds_timeout, std::chrono::steady_clock::now() + std::chrono::milliseconds(milliseconds_timeout), std::move(fun));
+	EventEntry event_entry(type, ++generate_timer_id_, milliseconds_timeout, std::chrono::steady_clock::now() + std::chrono::milliseconds(milliseconds_timeout), std::move(fun));
 	if (!timers_set_.empty() && event_entry.next_run_ < timers_set_.begin()->next_run_)
 	{
 		fall_through_ = true;
@@ -152,10 +87,10 @@ void DispatchQueue::DispatchThreadProc()
 					work.event_handler_();
 				work_queue_lock.lock();
 			}*/
-		
+
 		dq = std::move(work_queue_);
 		work_queue_lock.unlock();
-		for (auto &work : dq)
+		for (auto& work : dq)
 		{
 			if (work.event_handler_)
 				work.event_handler_();
@@ -202,7 +137,7 @@ void DispatchQueue::TimerThreadProc()
 
 					auto where = std::find_if(work_queue_.rbegin(),
 						work_queue_.rend(),
-						[](EventEntry const &e) { return !(e.type_==EntryType::kSingleTimer|| e.type_ == EntryType::kMultipleTimer); });
+						[](EventEntry const& e) { return !(e.type_ == EntryType::kSingleTimer || e.type_ == EntryType::kMultipleTimer); });
 
 					work_queue_.insert(where.base(), work);
 
@@ -211,7 +146,7 @@ void DispatchQueue::TimerThreadProc()
 				}
 
 				timer_lock.lock();
-				if (work.type_==EntryType::kMultipleTimer)
+				if (work.type_ == EntryType::kMultipleTimer)
 				{
 					work.next_run_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(work.timeout_);
 
