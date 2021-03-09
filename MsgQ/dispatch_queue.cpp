@@ -129,8 +129,14 @@ void DispatchQueue::TimerThreadProc()
             {
                 //timeout
                 timers_set_.erase(timers_set_.begin());
+                if (work.type_ == EntryType::kMultipleTimer)
+                {
+                    work.next_run_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(work.timeout_);
+
+                    timers_set_.insert(work);
+                }
                 timer_lock.unlock();
-              
+
                 {
                     //≤Â»Î∂”¡–
                     std::unique_lock< decltype(work_queue_mtx_) >  work_queue_lock(work_queue_mtx_);
@@ -143,14 +149,6 @@ void DispatchQueue::TimerThreadProc()
 
                     work_queue_cond_.notify_one();
 
-                }
-
-                timer_lock.lock();
-                if (work.type_ == EntryType::kMultipleTimer)
-                {
-                    work.next_run_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(work.timeout_);
-
-                    timers_set_.insert(std::move(work));
                 }
 
             }
