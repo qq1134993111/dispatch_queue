@@ -87,10 +87,13 @@ void DispatchQueue::DispatchThreadProc()
 
 void DispatchQueue::TimerThreadProc()
 {
-    std::unique_lock< decltype(timer_mtx_) > timer_lock(timer_mtx_);
-    timer_thread_started_ = true;
-    timer_cond_.notify_one();
 
+    {
+        timer_thread_started_ = true;
+        timer_cond_.notify_one();
+    }
+
+    std::unique_lock< decltype(timer_mtx_) > timer_lock(timer_mtx_);
 
     while (!quit_)
     {
@@ -129,6 +132,8 @@ void DispatchQueue::TimerThreadProc()
 
                 //≤Â»Î∂”¡–
                 work_concurrentqueue_.enqueue_bulk(v_expired.begin(), v_expired.size());
+
+                timer_lock.lock();
 
             }
         }

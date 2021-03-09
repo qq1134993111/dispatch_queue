@@ -230,8 +230,8 @@ private:
     std::thread  work_queue_thread_;
     std::thread  timer_thread_;
 
-    std::atomic< bool > work_queue_thread_started;
-    std::atomic< bool > timer_thread_started_;
+    std::atomic<bool> work_queue_thread_started;
+    std::atomic<bool> timer_thread_started_;
     std::atomic<bool> quit_;
 
     moodycamel::ConcurrentQueue<Event_Entry> work_concurrentqueue_;
