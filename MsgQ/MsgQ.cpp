@@ -61,7 +61,7 @@ void TestTimer(uint32_t index)
     }
 
     daily_logger->info("TestTimer{}:times:{},cur:{},max:{},min:{},avg:{}", index, nTimes, duration.count(), nMax, nMin, nAvg);
-    //daily_logger->flush();
+    daily_logger->flush();
 
 }
 
@@ -81,7 +81,7 @@ int main()
         std::cout << "Dispatch:" << f.get() << "\n";
     }
 
-    DispatchQueue::GetDefaultDispatchQueue().SetTimer(100, true, TestTimer, 100);
+    DispatchQueue::GetDefaultDispatchQueue().SetTimer(std::chrono::seconds(1), true, TestTimer, 100);
     DispatchQueue::GetDefaultDispatchQueue().Join();
 
     return 0;

@@ -16,22 +16,6 @@ DispatchQueue::~DispatchQueue()
 }
 
 
-uint64_t DispatchQueue::SetTimer(uint64_t milliseconds_timeout, EventFunc fun, bool repeat)
-{
-    if (!IsRunning())
-        return 0;
-
-    std::unique_lock<decltype(timer_mtx_)> timer_lock(timer_mtx_);
-    Event_Entry event_entry(++generate_timer_id_, milliseconds_timeout, std::chrono::steady_clock::now() + std::chrono::milliseconds(milliseconds_timeout), repeat, std::move(fun), true);
-    if (!timers_set_.empty() && event_entry.next_run_ < timers_set_.begin()->next_run_)
-    {
-        fall_through_ = true;
-    }
-    timers_set_.insert(std::move(event_entry));
-    timer_cond_.notify_one();
-
-    return generate_timer_id_;
-}
 
 bool DispatchQueue::CancelTimer(uint64_t timer_id)
 {
@@ -39,21 +23,22 @@ bool DispatchQueue::CancelTimer(uint64_t timer_id)
         return false;
 
     std::unique_lock<decltype(timer_mtx_)> timer_lock(timer_mtx_);
-    auto fun = [&](const Event_Entry& event_entry) {  return event_entry.id_ == timer_id; };
-    auto it = std::find_if(timers_set_.begin(), timers_set_.end(), fun);
-    if (it != timers_set_.end())
+
+    auto& by_id = timers_set_.get<BY_ID>();
+
+    auto it = by_id.find(timer_id);
+    if (it != by_id.end())
     {
         if (it == timers_set_.begin())
         {
-            timers_set_.erase(it);
+            by_id.erase(it);
             fall_through_ = true;
             timer_cond_.notify_one();
-
             return true;
         }
         else
         {
-            timers_set_.erase(it);
+            by_id.erase(it);
             return true;
         }
     }
@@ -70,7 +55,7 @@ void DispatchQueue::DispatchThreadProc()
 
     work_queue_thread_started = true;
 
-    std::vector<Event_Entry> vEvent(10240);
+    std::vector<EventEntry> vEvent(10240);
     while (!quit_)
     {
         size_t len = work_concurrentqueue_.try_dequeue_bulk(vEvent.begin(), vEvent.size());
@@ -105,9 +90,9 @@ void DispatchQueue::TimerThreadProc()
 
         while (!timers_set_.empty())
         {
-            auto  min_work = *timers_set_.begin();
+            auto  min_next_run = timers_set_.get<BY_EXPIRATION>().begin()->next_run_;
 
-            if (timer_cond_.wait_until(timer_lock, min_work.next_run_, [this] { return quit_.load() || fall_through_.load(); }))
+            if (timer_cond_.wait_until(timer_lock, min_next_run, [this] { return quit_.load() || fall_through_.load(); }))
             {
                 //等待条件完成
 
@@ -118,15 +103,16 @@ void DispatchQueue::TimerThreadProc()
             else
             {
                 //timeout
-                const auto end = timers_set_.upper_bound(min_work);
-                std::vector<Event_Entry> v_expired;
-                std::move(timers_set_.begin(), end, std::back_inserter(v_expired));
-                timers_set_.erase(timers_set_.begin(), end);
+                auto& by_expiration = timers_set_.get<BY_EXPIRATION>();
+                const auto end = by_expiration.upper_bound(min_next_run);
+                std::vector<EventEntry> v_expired;
+                std::move(by_expiration.begin(), end, std::back_inserter(v_expired));
+                by_expiration.erase(by_expiration.begin(), end);
                 for (const auto& work : v_expired)
                 {
                     if (work.repeat_)
                     {
-                        timers_set_.insert(Event_Entry(work.id_, work.timeout_, work.next_run_ + std::chrono::milliseconds(work.timeout_), true, work.event_handler_, true));
+                        timers_set_.insert(EventEntry(work.id_, work.timeout_, work.next_run_ + work.timeout_, true, work.event_handler_));
                     }
                 }
                 timer_lock.unlock();
