@@ -21,33 +21,27 @@ class DispatchQueue
 {
 public:
     using  EventFunc = std::function<void()>;
-    using  time_point = std::chrono::steady_clock::time_point;
 
     struct EventEntry
     {
         EventFunc event_handler_;
-
         uint64_t id_ = 0;
         std::chrono::milliseconds timeout_;
-        time_point next_run_;
+        std::chrono::steady_clock::time_point next_run_;
         bool repeat_ = false;
-        bool from_timer_ = false;
+
         EventEntry() {}
-        EventEntry(EventFunc event_handler)
-        {
-            event_handler_ = std::move(event_handler);
-        }
+
         EventEntry(uint64_t id,
             std::chrono::milliseconds timeout,
-            time_point next_run,
+            std::chrono::steady_clock::time_point next_run,
             bool repeat,
             EventFunc event_handler) :
             id_(id),
             timeout_(timeout),
             next_run_(next_run),
             repeat_(repeat),
-            event_handler_(event_handler),
-            from_timer_(true)
+            event_handler_(event_handler)
         {
         }
 
@@ -58,8 +52,8 @@ public:
             this->next_run_ = o.next_run_;
             this->repeat_ = o.repeat_;
             this->event_handler_ = o.event_handler_;
-            this->from_timer_ = o.from_timer_;
         }
+
         EventEntry(EventEntry&& o)
         {
             this->id_ = o.id_;
@@ -68,7 +62,6 @@ public:
             this->repeat_ = o.repeat_;
             this->event_handler_ = std::move(o.event_handler_);
             o.event_handler_ = nullptr;
-            this->from_timer_ = o.from_timer_;
         }
         EventEntry& operator=(const EventEntry& o)
         {
@@ -79,7 +72,6 @@ public:
                 this->next_run_ = o.next_run_;
                 this->repeat_ = o.repeat_;
                 this->event_handler_ = o.event_handler_;
-                this->from_timer_ = o.from_timer_;
             }
             return *this;
         }
@@ -93,12 +85,15 @@ public:
                 this->repeat_ = o.repeat_;
                 this->event_handler_ = std::move(o.event_handler_);
                 o.event_handler_ = nullptr;
-                this->from_timer_ = o.from_timer_;
             }
 
             return *this;
         }
 
+        operator EventFunc()
+        {
+            return event_handler_;
+        }
     };
 
     static DispatchQueue& GetDefaultDispatchQueue()
@@ -118,7 +113,7 @@ public:
     template<typename Fn>
     void DispatchAsync(Fn&& func)
     {
-        work_concurrentqueue_.enqueue(EventEntry(std::forward<Fn>(func)));
+        work_concurrentqueue_.enqueue(std::forward<Fn>(func));
     }
     template<class F, class... Args>
     void DispatchAsync(F&& f, Args&&... args)
@@ -137,7 +132,7 @@ public:
         std::atomic< bool > completed(false);
 
         {
-            work_concurrentqueue_.enqueue(EventEntry([&]()
+            work_concurrentqueue_.enqueue([&]()
                 {
                     std::forward<Fn>(func)();
 
@@ -145,7 +140,7 @@ public:
                     completed = true;
                     sync_cond.notify_one();
 
-                }));
+                });
         }
 
         sync_cond.wait(sync_lock, [&] { return completed.load(); });
@@ -259,7 +254,7 @@ private:
     std::atomic<bool> timer_thread_started_;
     std::atomic<bool> quit_;
 
-    moodycamel::ConcurrentQueue<EventEntry> work_concurrentqueue_;
+    moodycamel::ConcurrentQueue<EventFunc> work_concurrentqueue_;
 
     using  TimerSet = boost::multi_index_container<
         EventEntry,
@@ -267,7 +262,7 @@ private:
         boost::multi_index::hashed_unique<
         boost::multi_index::member<EventEntry, uint64_t, &EventEntry::id_>>,
         boost::multi_index::ordered_non_unique<
-        boost::multi_index::member<EventEntry, time_point, &EventEntry::next_run_>>>>;
+        boost::multi_index::member<EventEntry, std::chrono::steady_clock::time_point, &EventEntry::next_run_>>>>;
 
     enum
     {

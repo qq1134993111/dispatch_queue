@@ -1,4 +1,4 @@
-#include "stdafx.h"
+
 #include "dispatch_queue.h"
 #include<algorithm>
 #include <iterator>
@@ -57,15 +57,15 @@ void DispatchQueue::DispatchThreadProc()
 
     work_queue_thread_started = true;
 
-    std::vector<EventEntry> vEvent(10240);
+    std::vector<EventFunc> vEvent(10240);
     while (!quit_)
     {
         size_t len = work_concurrentqueue_.try_dequeue_bulk(vEvent.begin(), vEvent.size());
         for (size_t i = 0; i < len; i++)
         {
-            if (vEvent[i].event_handler_)
+            if (vEvent[i])
             {
-                vEvent[i].event_handler_();
+                vEvent[i]();
             }
         }
     }
@@ -114,13 +114,17 @@ void DispatchQueue::TimerThreadProc()
                 {
                     if (work.repeat_)
                     {
-                        timers_set_.insert(EventEntry(work.id_, work.timeout_, work.next_run_ + work.timeout_, true, work.event_handler_));
+                        //by_expiration.insert(EventEntry(work.id_, work.timeout_, work.next_run_ + work.timeout_, true, work.event_handler_));
+                        by_expiration.emplace(work.id_, work.timeout_, work.next_run_ + work.timeout_, true, work.event_handler_);
                     }
                 }
                 timer_lock.unlock();
 
                 //²åÈë¶ÓÁÐ
-                work_concurrentqueue_.enqueue_bulk(v_expired.begin(), v_expired.size());
+                for (auto& work : v_expired)
+                {
+                    work_concurrentqueue_.enqueue(std::move(work.event_handler_));
+                }
 
                 timer_lock.lock();
 
