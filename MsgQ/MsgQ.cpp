@@ -1,7 +1,6 @@
 // MsgQ.cpp : 定义控制台应用程序的入口点。
 //
 
-#include "stdafx.h"
 
 #include "spdlog/spdlog.h"
 
@@ -62,7 +61,8 @@ void TestTimer(uint32_t index)
 
     daily_logger->info("TestTimer{}:times:{},cur:{},max:{},min:{},avg:{}", index, nTimes, duration.count(), nMax, nMin, nAvg);
     daily_logger->flush();
-
+    static int i = 0;
+    std::cout << ++i << "\n";
 }
 
 int main()
@@ -70,20 +70,24 @@ int main()
     spdlog::set_pattern("*** [%Y-%m-%d %H:%M:%S,%f] %v ***");
     daily_logger->info("main");
 
+    DispatchQueue::GetDefaultDispatchQueue().Start();
     for (int i = 0; i < 10; i++)
     {
         DispatchQueue::GetDefaultDispatchQueue().DispatchAsync(TestMsg);
-        DispatchQueue::GetDefaultDispatchQueue().DispatchSync(TestMsgSync);
-        DispatchQueue::GetDefaultDispatchQueue().DispatchSync(TestMsgSyncReturn, i);
+
         auto f0 = DispatchQueue::GetDefaultDispatchQueue().Dispatch(TestMsgSync);
         std::cout << "Dispatch:" << f0.get() << "\n";
         auto f = DispatchQueue::GetDefaultDispatchQueue().Dispatch(TestMsgSyncReturn, i);
         std::cout << "Dispatch:" << f.get() << "\n";
     }
 
-    DispatchQueue::GetDefaultDispatchQueue().SetTimer(std::chrono::seconds(1), true, TestTimer, 100);
-    DispatchQueue::GetDefaultDispatchQueue().Join();
+    auto id = DispatchQueue::GetDefaultDispatchQueue().SetTimer(boost::chrono::seconds(1), true, TestTimer, 100);
+    std::cout <<"ID:"<<id << "\n";
+    std::this_thread::sleep_for(std::chrono::seconds(100));
 
+    std::cout << "cancel :" << id << "\n";
+
+    std::this_thread::sleep_for(std::chrono::seconds(3));
     return 0;
 }
 

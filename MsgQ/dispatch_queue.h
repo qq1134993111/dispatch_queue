@@ -1,173 +1,91 @@
 //#pragma once
 #ifndef _DISPATCHQUEUE_H_
 #define _DISPATCHQUEUE_H_
-#include <queue>
-#include <set>
-#include <functional>
-#include <chrono>
-#include <thread>
-#include <atomic>
-#include <mutex>
-#include <condition_variable>
+
+#include <iostream>
+#include <array>
 #include <future>
-#include "concurrentqueue.h"
+
+#include "boost/function.hpp"
+#include "boost/lockfree/queue.hpp"
+#include "boost/thread.hpp"
+#include "boost/atomic.hpp"
+#include "boost/scoped_ptr.hpp"
+#include "boost/chrono.hpp"
+
 #include <boost/multi_index/indexed_by.hpp>
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index_container.hpp>
+#include <boost/exception/exception.hpp>
 
 class DispatchQueue
 {
 public:
-    using  EventFunc = std::function<void()>;
-    using  time_point = std::chrono::steady_clock::time_point;
-
-    struct EventEntry
+    DispatchQueue() :task_queue_(10240)
     {
-        EventFunc event_handler_;
 
-        uint64_t id_ = 0;
-        std::chrono::milliseconds timeout_;
-        time_point next_run_;
-        bool repeat_ = false;
-        bool from_timer_ = false;
-        EventEntry() {}
-        EventEntry(EventFunc event_handler)
-        {
-            event_handler_ = std::move(event_handler);
-        }
-        EventEntry(uint64_t id,
-            std::chrono::milliseconds timeout,
-            time_point next_run,
-            bool repeat,
-            EventFunc event_handler) :
-            id_(id),
-            timeout_(timeout),
-            next_run_(next_run),
-            repeat_(repeat),
-            event_handler_(event_handler),
-            from_timer_(true)
-        {
-        }
-
-        EventEntry(const EventEntry& o)
-        {
-            this->id_ = o.id_;
-            this->timeout_ = o.timeout_;
-            this->next_run_ = o.next_run_;
-            this->repeat_ = o.repeat_;
-            this->event_handler_ = o.event_handler_;
-            this->from_timer_ = o.from_timer_;
-        }
-        EventEntry(EventEntry&& o)
-        {
-            this->id_ = o.id_;
-            this->timeout_ = o.timeout_;
-            this->next_run_ = o.next_run_;
-            this->repeat_ = o.repeat_;
-            this->event_handler_ = std::move(o.event_handler_);
-            o.event_handler_ = nullptr;
-            this->from_timer_ = o.from_timer_;
-        }
-        EventEntry& operator=(const EventEntry& o)
-        {
-            if (this != &o)
-            {
-                this->id_ = o.id_;
-                this->timeout_ = o.timeout_;
-                this->next_run_ = o.next_run_;
-                this->repeat_ = o.repeat_;
-                this->event_handler_ = o.event_handler_;
-                this->from_timer_ = o.from_timer_;
-            }
-            return *this;
-        }
-        EventEntry& operator=(EventEntry&& o)
-        {
-            if (this != &o)
-            {
-                this->id_ = o.id_;
-                this->timeout_ = o.timeout_;
-                this->next_run_ = o.next_run_;
-                this->repeat_ = o.repeat_;
-                this->event_handler_ = std::move(o.event_handler_);
-                o.event_handler_ = nullptr;
-                this->from_timer_ = o.from_timer_;
-            }
-
-            return *this;
-        }
-
-    };
-
-    static DispatchQueue& GetDefaultDispatchQueue()
-    {
-        static DispatchQueue s_dispatchqueue;
-        return s_dispatchqueue;
     }
-public:
-    DispatchQueue();
-    ~DispatchQueue();
-
-    DispatchQueue(const DispatchQueue&) = delete;
-    DispatchQueue(DispatchQueue&&) = delete;
-    DispatchQueue& operator=(const DispatchQueue&) = delete;
-    DispatchQueue& operator=(DispatchQueue&&) = delete;
-
-    template<typename Fn>
-    void DispatchAsync(Fn&& func)
+    ~DispatchQueue()
     {
-        work_concurrentqueue_.enqueue(EventEntry(std::forward<Fn>(func)));
+        Stop();
     }
+
+    bool Start()
+    {
+        boost::unique_lock<boost::mutex> lc(mtx_);
+        if (task_handle_thread_ != nullptr && timer_handle_thread_ != nullptr)
+            return false;
+
+        quit_ = false;
+        task_handle_thread_.reset(new boost::thread(&DispatchQueue::TaskProc, this));
+        timer_handle_thread_.reset(new boost::thread(&DispatchQueue::TimerProc, this));
+        return true;
+    }
+
+    void Stop()
+    {
+        boost::unique_lock<boost::mutex> lc(mtx_);
+
+        quit_ = true;
+        if (task_handle_thread_ && task_handle_thread_->joinable())
+        {
+            task_handle_thread_->join();
+        }
+
+        task_handle_thread_.reset();
+
+        if (timer_handle_thread_ && timer_handle_thread_->joinable())
+        {
+            timer_handle_thread_->join();
+        }
+
+        timer_handle_thread_.reset();
+
+    }
+
+    template<typename F>
+    void DispatchAsync(F&& f)
+    {
+        std::array<char, sizeof(boost::function<void()>)> item;
+        new (&item[0]) boost::function<void()>(std::forward<F>(f));
+        while (!task_queue_.push(item))continue;
+    }
+
     template<class F, class... Args>
     void DispatchAsync(F&& f, Args&&... args)
     {
-        auto func = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
-        std::function<void()> task = func;
+        boost::function<void()> task = boost::bind(std::forward<F>(f), std::forward<Args>(args)...);
         DispatchAsync(std::move(task));
     }
-
-    template<typename Fn>
-    void DispatchSync(Fn&& func)
-    {
-        std::mutex sync_mtx;
-        std::unique_lock< decltype(sync_mtx) > sync_lock(sync_mtx);
-        std::condition_variable sync_cond;
-        std::atomic< bool > completed(false);
-
-        {
-            work_concurrentqueue_.enqueue(EventEntry([&]()
-                {
-                    std::forward<Fn>(func)();
-
-                    std::unique_lock<std::mutex> sync_cb_lock(sync_mtx);
-                    completed = true;
-                    sync_cond.notify_one();
-
-                }));
-        }
-
-        sync_cond.wait(sync_lock, [&] { return completed.load(); });
-    }
-
-    template<class F, class... Args>
-    void DispatchSync(F&& f, Args&&... args)
-    {
-        std::function<void()> task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
-
-        DispatchSync(std::move(task));
-    }
-
 
     template<class F, class... Args>
     auto Dispatch(F&& f, Args&&... args)  -> std::future<typename std::result_of<F(Args...)>::type>
     {
         using return_type = typename std::result_of<F(Args...)>::type;
 
-        auto task = std::make_shared< std::packaged_task<return_type()> >(
-            std::bind(std::forward<F>(f), std::forward<Args>(args)...)
-            );
+        auto task = std::make_shared< std::packaged_task<return_type()>>(boost::bind(std::forward<F>(f), std::forward<Args>(args)...));
 
         std::future<return_type> res = task->get_future();
 
@@ -177,97 +95,218 @@ public:
     }
 
     template<class Rep, class Period, class Fn>
-    uint64_t SetTimer(std::chrono::duration<Rep, Period>  timeout_duration, Fn&& fun, bool repeat = true)
+    uint64_t SetTimer(boost::chrono::duration<Rep, Period>  timeout_duration, Fn&& fun, bool repeat = true)
     {
-        if (!IsRunning())
+        if (quit_)
             return 0;
 
-        EventEntry event_entry(++generate_timer_id_,
-            timeout_duration,
-            std::chrono::steady_clock::now() + timeout_duration,
-            repeat,
+        TimeEvent event(++next_id_,
+            boost::chrono::steady_clock::now() + timeout_duration,
+            (repeat ? boost::chrono::duration_cast<boost::chrono::nanoseconds>(timeout_duration) : boost::chrono::nanoseconds(-1)),
             std::forward<Fn>(fun));
 
-        std::unique_lock<decltype(timer_mtx_)> timer_lock(timer_mtx_);
-        auto& by_expiration = timers_set_.get<BY_EXPIRATION>();
-        if (!by_expiration.empty() && event_entry.next_run_ < by_expiration.begin()->next_run_)
+        boost::unique_lock<decltype(mtx_)> lc(mtx_);
+        auto& by_expiration = timeouts_.get<BY_EXPIRATION>();
+        if (!by_expiration.empty() && event.expiration < by_expiration.begin()->expiration)
         {
             fall_through_ = true;
         }
-        by_expiration.insert(std::move(event_entry));
-        timer_cond_.notify_one();
+        by_expiration.insert(std::move(event));
 
-        return generate_timer_id_;
+
+        cond_var_.notify_one();
+
+
+        return next_id_;
     }
 
     template<class Rep, class Period, class F, class... Args>
-    uint64_t SetTimer(std::chrono::duration<Rep, Period>  timeout_duration, bool repeat, F&& f, Args&&... args)
+    uint64_t SetTimer(boost::chrono::duration<Rep, Period>  timeout_duration, bool repeat, F&& f, Args&&... args)
     {
-        std::function<void()> func = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
+        boost::function<void()> func = boost::bind(std::forward<F>(f), std::forward<Args>(args)...);
 
         return SetTimer(timeout_duration, std::move(func), repeat);
     }
-    bool CancelTimer(uint64_t timer_id);
-    bool IsRunning()
-    {
-        return (timer_thread_started_ && work_queue_thread_started && !quit_);
-    }
-    void Join()
-    {
-        if (timer_thread_.joinable())
-            timer_thread_.join();
 
-        if (work_queue_thread_.joinable())
-            work_queue_thread_.join();
-    }
-    void Stop()
+    bool CancelTimer(uint64_t timer_id)
     {
-        quit_ = true;
-        work_queue_thread_started = false;
-        timer_thread_started_ = false;
-    }
-private:
-    void DispatchThreadProc();
-    void TimerThreadProc();
-    bool InitThread()
-    {
-        try
+        if (timer_id == 0)
+            return false;
+
+        boost::unique_lock<decltype(mtx_)> lc(mtx_);
+
+        auto& by_id = timeouts_.get<BY_ID>();
+        auto& by_expiration = timeouts_.get<BY_EXPIRATION>();
+
+        auto it = by_id.find(timer_id);
+        if (it != by_id.end())
         {
-            std::thread t(&DispatchQueue::DispatchThreadProc, this);
-            work_queue_thread_ = std::move(t);
+            if (by_expiration.begin()->id == it->id)
+            {
+                by_id.erase(it);
 
-            std::thread t1(&DispatchQueue::TimerThreadProc, this);
-            timer_thread_ = std::move(t1);
-
-
-            std::unique_lock<decltype(timer_mtx_)> timer_lock(timer_mtx_);
-            timer_cond_.wait(timer_lock, [this] { return timer_thread_started_.load(); });
+                fall_through_ = true;
+                cond_var_.notify_one();
+                return true;
+            }
+            else
+            {
+                by_id.erase(it);
+                return true;
+            }
         }
-        catch (const std::exception&)
+        else
         {
             return false;
         }
 
         return true;
-    };
+    }
+
+    static DispatchQueue& GetDefaultDispatchQueue()
+    {
+        static DispatchQueue s_v;
+        return s_v;
+    }
 private:
 
-    std::thread  work_queue_thread_;
-    std::thread  timer_thread_;
 
-    std::atomic<bool> work_queue_thread_started;
-    std::atomic<bool> timer_thread_started_;
-    std::atomic<bool> quit_;
+    void TaskProc()
+    {
+        std::array<char, sizeof(boost::function<void()>)> item;
 
-    moodycamel::ConcurrentQueue<EventEntry> work_concurrentqueue_;
+        while (!quit_)
+        {
+            if (task_queue_.pop(item))
+            {
+                auto p = reinterpret_cast<boost::function<void()>*>(&item[0]);
+                try
+                {
+                    (*p)();
+                }
+                catch (...)
+                {
+                    std::cout << "task_queue_ handle exception:" << boost::current_exception_diagnostic_information() << "\n";
+                }
 
-    using  TimerSet = boost::multi_index_container<
-        EventEntry,
+                p->~function();
+            }
+        }
+
+    }
+
+    void TimerProc()
+    {
+        std::array<char, sizeof(boost::function<void()>)> data;
+        boost::unique_lock< decltype(mtx_) > lc(mtx_);
+
+        while (!quit_)
+        {
+            if (timeouts_.empty())
+            {
+                cond_var_.wait(lc, [&] { return quit_ || !timeouts_.empty(); });
+            }
+
+            while (!timeouts_.empty())
+            {
+                auto  min_next_run = timeouts_.get<BY_EXPIRATION>().begin()->expiration;
+
+                if (cond_var_.wait_until(lc, min_next_run, [this] { return quit_ || fall_through_; }))
+                {
+
+                    fall_through_ = false;
+
+                    break;
+                }
+                else
+                {
+                    //timeout
+                    auto& by_expiration = timeouts_.get<BY_EXPIRATION>();
+                    const auto end = by_expiration.upper_bound(min_next_run);
+                    std::vector<TimeEvent> v_expired;
+                    std::move(by_expiration.begin(), end, std::back_inserter(v_expired));
+                    by_expiration.erase(by_expiration.begin(), end);
+                    for (const auto& work : v_expired)
+                    {
+                        if (work.repeat_interval.count() >= 0)
+                        {
+                            by_expiration.insert(TimeEvent{ work.id, work.expiration + work.repeat_interval,work.repeat_interval,work.callback });
+                        }
+                    }
+
+                    lc.unlock();
+
+
+                    for (auto& work : v_expired)
+                    {
+                        new (&data[0]) boost::function<void()>(std::move(work.callback));
+                        while (!task_queue_.push(data))continue;
+                    }
+
+                    lc.lock();
+
+                }
+            }
+        }
+
+    }
+
+    boost::lockfree::queue<std::array<char, sizeof(boost::function<void()>)>> task_queue_;
+
+    boost::scoped_ptr<boost::thread> task_handle_thread_;
+    boost::scoped_ptr<boost::thread> timer_handle_thread_;
+    bool quit_ = true;
+
+    boost::mutex mtx_;
+    boost::condition_variable cond_var_;
+
+    struct TimeEvent
+    {
+        uint64_t id;
+        boost::chrono::steady_clock::time_point expiration;
+        boost::chrono::nanoseconds repeat_interval;
+        std::function<void()> callback;
+
+
+        TimeEvent(const TimeEvent& o) = default;
+        TimeEvent& operator=(const TimeEvent& o) = default;
+
+        TimeEvent(uint64_t id, boost::chrono::steady_clock::time_point expiration, boost::chrono::nanoseconds repeat_interval, std::function<void()> callback)
+        {
+            this->id = id;
+            this->expiration = expiration;
+            this->repeat_interval = repeat_interval;
+            this->callback = std::move(callback);
+        }
+
+        TimeEvent(TimeEvent&& o)
+        {
+            id = o.id;
+            expiration = o.expiration;
+            repeat_interval = o.repeat_interval;
+            callback = std::move(o.callback);
+        }
+
+        TimeEvent& operator=(TimeEvent&& o)
+        {
+            if (this != &o)
+            {
+                id = o.id;
+                expiration = o.expiration;
+                repeat_interval = o.repeat_interval;
+                callback = std::move(o.callback);
+            }
+        }
+    };
+
+    typedef boost::multi_index_container<
+        TimeEvent,
         boost::multi_index::indexed_by<
         boost::multi_index::hashed_unique<
-        boost::multi_index::member<EventEntry, uint64_t, &EventEntry::id_>>,
+        boost::multi_index::member<TimeEvent, uint64_t, &TimeEvent::id>>,
         boost::multi_index::ordered_non_unique<
-        boost::multi_index::member<EventEntry, time_point, &EventEntry::next_run_>>>>;
+        boost::multi_index::member<TimeEvent, boost::chrono::steady_clock::time_point, &TimeEvent::expiration>>>>
+        TimerSet;
 
     enum
     {
@@ -275,12 +314,10 @@ private:
         BY_EXPIRATION = 1,
     };
 
-    std::mutex timer_mtx_;
-    std::condition_variable timer_cond_;
-    TimerSet timers_set_;
+    TimerSet timeouts_;
+    boost::atomic<uint64_t> next_id_;
+    bool fall_through_ = false;
 
-    std::atomic<uint64_t> generate_timer_id_;
-    std::atomic<bool> fall_through_;
 };
 
 #endif
