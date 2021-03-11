@@ -83,10 +83,10 @@ int main()
 
     auto id = DispatchQueue::GetDefaultDispatchQueue().SetTimer(boost::chrono::seconds(1), true, TestTimer, 100);
     std::cout <<"ID:"<<id << "\n";
-    std::this_thread::sleep_for(std::chrono::seconds(100));
+    std::this_thread::sleep_for(std::chrono::seconds(60));
 
     std::cout << "cancel :" << id << "\n";
-
+    DispatchQueue::GetDefaultDispatchQueue().CancelTimer(id);
     std::this_thread::sleep_for(std::chrono::seconds(3));
     return 0;
 }

@@ -34,21 +34,39 @@ public:
 
     bool Start()
     {
-        boost::unique_lock<boost::mutex> lc(mtx_);
-        if (task_handle_thread_ != nullptr && timer_handle_thread_ != nullptr)
-            return false;
+        try
+        {
+            boost::unique_lock<boost::mutex> lc(mtx_);
 
-        quit_ = false;
-        task_handle_thread_.reset(new boost::thread(&DispatchQueue::TaskProc, this));
-        timer_handle_thread_.reset(new boost::thread(&DispatchQueue::TimerProc, this));
+            if (start_)
+                return false;
+
+            start_ = true;
+            quit_ = false;
+            task_handle_thread_.reset(new boost::thread(&DispatchQueue::TaskProc, this));
+            timer_handle_thread_.reset(new boost::thread(&DispatchQueue::TimerProc, this));
+        }
+        catch (const std::exception& e)
+        {
+            std::cout << boost::current_exception_diagnostic_information() << "\n";
+            Stop();
+            return false;
+        }
+   
         return true;
     }
 
     void Stop()
     {
-        boost::unique_lock<boost::mutex> lc(mtx_);
+        {
+            boost::unique_lock<boost::mutex> lc(mtx_);
 
-        quit_ = true;
+            start_ = false;
+            quit_ = true;
+
+            cond_var_.notify_one();
+        }
+
         if (task_handle_thread_ && task_handle_thread_->joinable())
         {
             task_handle_thread_->join();
@@ -255,6 +273,7 @@ private:
 
     boost::scoped_ptr<boost::thread> task_handle_thread_;
     boost::scoped_ptr<boost::thread> timer_handle_thread_;
+    bool start_ = false;
     bool quit_ = true;
 
     boost::mutex mtx_;
