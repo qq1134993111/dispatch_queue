@@ -3,16 +3,15 @@
 #include<algorithm>
 #include <iterator>
 #include <vector>
-DispatchQueue::DispatchQueue() :timer_thread_started_(false), work_queue_thread_started(false), quit_(false), generate_timer_id_(0), fall_through_(false)
+DispatchQueue::DispatchQueue() :generate_timer_id_(0), fall_through_(false)
 {
-    InitThread();
+    //Start();
 }
 
 
 DispatchQueue::~DispatchQueue()
 {
-    Stop();
-    Join();
+    Stop(true);
 }
 
 
@@ -54,9 +53,6 @@ bool DispatchQueue::CancelTimer(uint64_t timer_id)
 
 void DispatchQueue::DispatchThreadProc()
 {
-
-    work_queue_thread_started = true;
-
     std::vector<EventFunc> vEvent(10240);
     while (!quit_)
     {
@@ -75,12 +71,6 @@ void DispatchQueue::DispatchThreadProc()
 void DispatchQueue::TimerThreadProc()
 {
 
-    {
-        std::unique_lock< decltype(timer_mtx_) > timer_lock(timer_mtx_);
-        timer_thread_started_ = true;
-        timer_cond_.notify_one();
-    }
-
     std::unique_lock< decltype(timer_mtx_) > timer_lock(timer_mtx_);
 
     while (!quit_)
@@ -94,7 +84,7 @@ void DispatchQueue::TimerThreadProc()
         {
             auto  min_next_run = timers_set_.get<BY_EXPIRATION>().begin()->next_run_;
 
-            if (timer_cond_.wait_until(timer_lock, min_next_run, [this] { return quit_.load() || fall_through_.load(); }))
+            if (timer_cond_.wait_until(timer_lock, min_next_run, [this] { return quit_.load() || fall_through_; }))
             {
                 //等待条件完成
 

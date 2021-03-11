@@ -1,6 +1,7 @@
 //#pragma once
 #ifndef _DISPATCHQUEUE_H_
 #define _DISPATCHQUEUE_H_
+#include <iostream>
 #include <queue>
 #include <set>
 #include <functional>
@@ -16,6 +17,8 @@
 #include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index_container.hpp>
+#include <boost/exception/exception.hpp>
+#include <boost/exception/diagnostic_information.hpp>
 
 class DispatchQueue
 {
@@ -118,8 +121,7 @@ public:
     template<class F, class... Args>
     void DispatchAsync(F&& f, Args&&... args)
     {
-        auto func = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
-        std::function<void()> task = func;
+        std::function<void()> task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
         DispatchAsync(std::move(task));
     }
 
@@ -205,54 +207,63 @@ public:
     bool CancelTimer(uint64_t timer_id);
     bool IsRunning()
     {
-        return (timer_thread_started_ && work_queue_thread_started && !quit_);
+        return (start_ && !quit_);
     }
     void Join()
     {
-        if (timer_thread_.joinable())
-            timer_thread_.join();
+        if (timer_thread_ && timer_thread_->joinable())
+            timer_thread_->join();
+        timer_thread_ = nullptr;
 
-        if (work_queue_thread_.joinable())
-            work_queue_thread_.join();
+        if (work_queue_thread_ && work_queue_thread_->joinable())
+            work_queue_thread_->join();
+        work_queue_thread_ = nullptr;
     }
-    void Stop()
-    {
-        quit_ = true;
-        work_queue_thread_started = false;
-        timer_thread_started_ = false;
-    }
-private:
-    void DispatchThreadProc();
-    void TimerThreadProc();
-    bool InitThread()
+
+    bool Start()
     {
         try
         {
-            std::thread t(&DispatchQueue::DispatchThreadProc, this);
-            work_queue_thread_ = std::move(t);
+            if (start_)
+                return false;
 
-            std::thread t1(&DispatchQueue::TimerThreadProc, this);
-            timer_thread_ = std::move(t1);
-
-
-            std::unique_lock<decltype(timer_mtx_)> timer_lock(timer_mtx_);
-            timer_cond_.wait(timer_lock, [this] { return timer_thread_started_.load(); });
+            start_ = true;
+            quit_ = false;
+            work_queue_thread_ = std::make_unique<std::thread>(&DispatchQueue::DispatchThreadProc, this);
+            timer_thread_ = std::make_unique<std::thread>(&DispatchQueue::TimerThreadProc, this);
         }
         catch (const std::exception&)
         {
+            start_ = false;
+            quit_ = true;
+            std::cout << boost::current_exception_diagnostic_information() << "\n";
             return false;
         }
 
         return true;
     };
+
+    void Stop(bool wait = true)
+    {
+        start_ = false;
+        quit_ = true;
+        if (wait)
+        {
+            Join();
+        }
+    }
+
+private:
+    void DispatchThreadProc();
+    void TimerThreadProc();
+
 private:
 
-    std::thread  work_queue_thread_;
-    std::thread  timer_thread_;
+    std::unique_ptr<std::thread>  work_queue_thread_;
+    std::unique_ptr<std::thread>  timer_thread_;
 
-    std::atomic<bool> work_queue_thread_started;
-    std::atomic<bool> timer_thread_started_;
-    std::atomic<bool> quit_;
+    std::atomic<bool> start_ = false;
+    std::atomic<bool> quit_ = true;
 
     moodycamel::ConcurrentQueue<EventFunc> work_concurrentqueue_;
 
@@ -275,7 +286,7 @@ private:
     TimerSet timers_set_;
 
     std::atomic<uint64_t> generate_timer_id_;
-    std::atomic<bool> fall_through_;
+    bool fall_through_;
 };
 
 #endif

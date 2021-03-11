@@ -69,6 +69,7 @@ int main()
     spdlog::set_pattern("*** [%Y-%m-%d %H:%M:%S,%f] %v ***");
     daily_logger->info("main");
 
+    DispatchQueue::GetDefaultDispatchQueue().Start();
     for (int i = 0; i < 10; i++)
     {
         DispatchQueue::GetDefaultDispatchQueue().DispatchAsync(TestMsg);
@@ -80,8 +81,23 @@ int main()
         std::cout << "Dispatch:" << f.get() << "\n";
     }
 
-    DispatchQueue::GetDefaultDispatchQueue().SetTimer(std::chrono::seconds(1), true, TestTimer, 100);
-    DispatchQueue::GetDefaultDispatchQueue().Join();
+    auto id1 = DispatchQueue::GetDefaultDispatchQueue().SetTimer(std::chrono::seconds(1), true, TestTimer, 100);
+    auto id2 = DispatchQueue::GetDefaultDispatchQueue().SetTimer(std::chrono::seconds(1), []() {
+        static int i = 0;
+        std::cout << "1s " << ++i << "\n";
+        });
+    auto id3 = DispatchQueue::GetDefaultDispatchQueue().SetTimer(std::chrono::seconds(10), []() {
+        static int i = 0;
+        std::cout << "10s " << ++i << "\n";
+        });
+
+    std::this_thread::sleep_for(std::chrono::seconds(60));
+    std::cout << "CancelTimer:" << id3 << "," << id2 << "," << id1 << "\n";
+    DispatchQueue::GetDefaultDispatchQueue().CancelTimer(id3);
+    DispatchQueue::GetDefaultDispatchQueue().CancelTimer(id2);
+    DispatchQueue::GetDefaultDispatchQueue().CancelTimer(id1);
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    DispatchQueue::GetDefaultDispatchQueue().Stop();
 
     return 0;
 }
