@@ -14,6 +14,7 @@
 #include <boost/multi_index/indexed_by.hpp>
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/ordered_index.hpp>
+#include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index_container.hpp>
 
 class DispatchQueue
@@ -99,13 +100,6 @@ public:
         }
 
     };
-    //struct CompareLessNextRun
-    //{
-    //    bool operator()(const EventEntry& left, const EventEntry& right) const
-    //    {
-    //        return left.next_run_ < right.next_run_;
-    //    }
-    //};
 
     static DispatchQueue& GetDefaultDispatchQueue()
     {
@@ -270,7 +264,7 @@ private:
     using  TimerSet = boost::multi_index_container<
         EventEntry,
         boost::multi_index::indexed_by<
-        boost::multi_index::ordered_unique<
+        boost::multi_index::hashed_unique<
         boost::multi_index::member<EventEntry, uint64_t, &EventEntry::id_>>,
         boost::multi_index::ordered_non_unique<
         boost::multi_index::member<EventEntry, time_point, &EventEntry::next_run_>>>>;

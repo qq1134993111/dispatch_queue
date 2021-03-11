@@ -25,13 +25,15 @@ bool DispatchQueue::CancelTimer(uint64_t timer_id)
     std::unique_lock<decltype(timer_mtx_)> timer_lock(timer_mtx_);
 
     auto& by_id = timers_set_.get<BY_ID>();
+    auto& by_expiration = timers_set_.get<BY_EXPIRATION>();
 
     auto it = by_id.find(timer_id);
     if (it != by_id.end())
     {
-        if (it == timers_set_.begin())
+        if (it->id_ == by_expiration.begin()->id_)
         {
             by_id.erase(it);
+
             fall_through_ = true;
             timer_cond_.notify_one();
             return true;
