@@ -21,7 +21,7 @@ bool DispatchQueue::CancelTimer(uint64_t timer_id)
     if (!IsRunning())
         return false;
 
-    std::unique_lock<decltype(timer_mtx_)> timer_lock(timer_mtx_);
+    std::unique_lock<decltype(mtx_)> timer_lock(mtx_);
 
     auto& by_id = timers_set_.get<BY_ID>();
     auto& by_expiration = timers_set_.get<BY_EXPIRATION>();
@@ -34,7 +34,7 @@ bool DispatchQueue::CancelTimer(uint64_t timer_id)
             by_id.erase(it);
 
             fall_through_ = true;
-            timer_cond_.notify_one();
+            timer_cond_var_.notify_one();
             return true;
         }
         else
@@ -71,20 +71,20 @@ void DispatchQueue::DispatchThreadProc()
 void DispatchQueue::TimerThreadProc()
 {
 
-    std::unique_lock< decltype(timer_mtx_) > timer_lock(timer_mtx_);
+    std::unique_lock< decltype(mtx_) > timer_lock(mtx_);
 
     while (!quit_)
     {
         if (timers_set_.empty())
         {
-            timer_cond_.wait(timer_lock, [&] { return quit_ || !timers_set_.empty(); });
+            timer_cond_var_.wait(timer_lock, [&] { return quit_ || !timers_set_.empty(); });
         }
 
         while (!timers_set_.empty())
         {
             auto  min_next_run = timers_set_.get<BY_EXPIRATION>().begin()->next_run_;
 
-            if (timer_cond_.wait_until(timer_lock, min_next_run, [this] { return quit_.load() || fall_through_; }))
+            if (timer_cond_var_.wait_until(timer_lock, min_next_run, [this] { return quit_.load() || fall_through_; }))
             {
                 //等待条件完成
 

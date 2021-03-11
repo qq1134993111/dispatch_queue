@@ -185,14 +185,14 @@ public:
             repeat,
             std::forward<Fn>(fun));
 
-        std::unique_lock<decltype(timer_mtx_)> timer_lock(timer_mtx_);
+        std::unique_lock<decltype(mtx_)> timer_lock(mtx_);
         auto& by_expiration = timers_set_.get<BY_EXPIRATION>();
         if (!by_expiration.empty() && event_entry.next_run_ < by_expiration.begin()->next_run_)
         {
             fall_through_ = true;
         }
         by_expiration.insert(std::move(event_entry));
-        timer_cond_.notify_one();
+        timer_cond_var_.notify_one();
 
         return generate_timer_id_;
     }
@@ -224,6 +224,7 @@ public:
     {
         try
         {
+            std::unique_lock<std::mutex> lc(mtx_);
             if (start_)
                 return false;
 
@@ -234,9 +235,9 @@ public:
         }
         catch (const std::exception&)
         {
-            start_ = false;
-            quit_ = true;
+
             std::cout << boost::current_exception_diagnostic_information() << "\n";
+            Stop();
             return false;
         }
 
@@ -245,8 +246,13 @@ public:
 
     void Stop(bool wait = true)
     {
-        start_ = false;
-        quit_ = true;
+        {
+            std::unique_lock<std::mutex> lc(mtx_);
+            start_ = false;
+            quit_ = true;
+            timer_cond_var_.notify_one();
+        }
+
         if (wait)
         {
             Join();
@@ -281,8 +287,8 @@ private:
         BY_EXPIRATION = 1,
     };
 
-    std::mutex timer_mtx_;
-    std::condition_variable timer_cond_;
+    std::mutex mtx_;
+    std::condition_variable timer_cond_var_;
     TimerSet timers_set_;
 
     std::atomic<uint64_t> generate_timer_id_;
