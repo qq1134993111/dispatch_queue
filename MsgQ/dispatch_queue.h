@@ -298,7 +298,7 @@ private:
             this->callback = std::move(callback);
         }
 
-        TimeEvent(TimeEvent&& o)
+        TimeEvent(TimeEvent&& o) noexcept
         {
             id = o.id;
             expiration = o.expiration;
@@ -306,7 +306,7 @@ private:
             callback = std::move(o.callback);
         }
 
-        TimeEvent& operator=(TimeEvent&& o)
+        TimeEvent& operator=(TimeEvent&& o) noexcept
         {
             if (this != &o)
             {
