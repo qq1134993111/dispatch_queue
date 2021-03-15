@@ -60,7 +60,7 @@ public:
             this->event_handler_ = o.event_handler_;
             this->from_timer_ = o.from_timer_;
         }
-        EventEntry(EventEntry&& o)
+        EventEntry(EventEntry&& o) noexcept
         {
             this->id_ = o.id_;
             this->timeout_ = o.timeout_;
@@ -83,7 +83,7 @@ public:
             }
             return *this;
         }
-        EventEntry& operator=(EventEntry&& o)
+        EventEntry& operator=(EventEntry&& o) noexcept
         {
             if (this != &o)
             {

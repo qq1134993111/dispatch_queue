@@ -1,4 +1,4 @@
-#include "stdafx.h"
+
 #include "dispatch_queue.h"
 #include<algorithm>
 #include <iterator>
