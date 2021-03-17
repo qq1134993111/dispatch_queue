@@ -24,7 +24,7 @@
 class DispatchQueue
 {
     static const int16_t kDelegateCapacitySize = 64;
-    using StorageType = delegate::TemplateFunctorArgs<kDelegateCapacitySize>::StorageType;
+    using StorageType = std::array<char, sizeof(delegate::CustomMoveDelegate<kDelegateCapacitySize, void>)>;
 public:
     DispatchQueue() :task_queue_(10240)
     {
@@ -55,7 +55,7 @@ public:
             Stop();
             return false;
         }
-   
+
         return true;
     }
 
@@ -90,7 +90,7 @@ public:
     void DispatchAsync(F&& f)
     {
         StorageType item;
-        new (&item) delegate::CustomMoveDelegate<kDelegateCapacitySize,void>(std::forward<F>(f));
+        new (&item) delegate::CustomMoveDelegate<kDelegateCapacitySize, void>(std::forward<F>(f));
         while (!task_queue_.push(item))continue;
     }
 
@@ -144,7 +144,7 @@ public:
     template<class Rep, class Period, class F, class... Args>
     uint64_t SetTimer(boost::chrono::duration<Rep, Period>  timeout_duration, bool repeat, F&& f, Args&&... args)
     {
-        delegate::CustomMoveDelegate<kDelegateCapacitySize, void> func = boost::bind(std::forward<F>(f), std::forward<Args>(args)...);
+        delegate::CustomDelegate<kDelegateCapacitySize, void> func = boost::bind(std::forward<F>(f), std::forward<Args>(args)...);
 
         return SetTimer(timeout_duration, std::move(func), repeat);
     }
@@ -260,7 +260,7 @@ private:
 
                     for (auto& work : v_expired)
                     {
-                        new (&data) boost::function<void()>(std::move(work.callback));
+                        new (&data) delegate::CustomMoveDelegate<kDelegateCapacitySize, void>(std::move(work.callback));
                         while (!task_queue_.push(data))continue;
                     }
 
@@ -287,13 +287,13 @@ private:
         uint64_t id;
         boost::chrono::steady_clock::time_point expiration;
         boost::chrono::nanoseconds repeat_interval;
-        std::function<void()> callback;
+        delegate::CustomDelegate<kDelegateCapacitySize, void> callback;
 
 
         TimeEvent(const TimeEvent& o) = default;
         TimeEvent& operator=(const TimeEvent& o) = default;
 
-        TimeEvent(uint64_t id, boost::chrono::steady_clock::time_point expiration, boost::chrono::nanoseconds repeat_interval, std::function<void()> callback)
+        TimeEvent(uint64_t id, boost::chrono::steady_clock::time_point expiration, boost::chrono::nanoseconds repeat_interval, delegate::CustomDelegate<kDelegateCapacitySize, void> callback)
         {
             this->id = id;
             this->expiration = expiration;

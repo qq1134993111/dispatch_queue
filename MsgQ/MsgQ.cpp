@@ -73,7 +73,7 @@ int main()
     DispatchQueue::GetDefaultDispatchQueue().Start();
     for (int i = 0; i < 10; i++)
     {
-        DispatchQueue::GetDefaultDispatchQueue().DispatchAsync(TestMsg);
+        DispatchQueue::GetDefaultDispatchQueue().DispatchAsync(&TestMsg);
 
         auto f0 = DispatchQueue::GetDefaultDispatchQueue().Dispatch(TestMsgSync);
         std::cout << "Dispatch:" << f0.get() << "\n";
@@ -82,7 +82,7 @@ int main()
     }
 
     auto id = DispatchQueue::GetDefaultDispatchQueue().SetTimer(boost::chrono::seconds(1), true, TestTimer, 100);
-    std::cout <<"ID:"<<id << "\n";
+    std::cout << "ID:" << id << "\n";
     std::this_thread::sleep_for(std::chrono::seconds(60));
 
     std::cout << "cancel :" << id << "\n";

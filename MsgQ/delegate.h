@@ -209,6 +209,7 @@ namespace delegate
      * would make the delegate larger for no real gain (delegates are expected to be called far more than copied or
      * moved).
      */
+    template<size_t CapacitySize>
     struct Vtable
     {
         /**
@@ -232,17 +233,17 @@ namespace delegate
         /**
          * Reference to the copy function.
          */
-        void(&copy)(FunctorArgs<>& lhs, const FunctorArgs<>& rhs);
+        void(&copy)(FunctorArgs<CapacitySize>& lhs, const FunctorArgs<CapacitySize>& rhs);
 
         /**
          * Reference to the move function.
          */
-        void(&move)(FunctorArgs<>& lhs, FunctorArgs<>&& rhs);
+        void(&move)(FunctorArgs<CapacitySize>& lhs, FunctorArgs<CapacitySize>&& rhs);
 
         /**
          * Reference to the destroy function.
          */
-        void(&destroy)(FunctorArgs<>& args);
+        void(&destroy)(FunctorArgs<CapacitySize>& args);
 
         /**
          * Actual code to perform a copy.
@@ -253,9 +254,9 @@ namespace delegate
          */
         template<typename T,
             typename std::enable_if<std::is_copy_constructible<T>::value, T>::type* = nullptr>
-            static void typed_copy(FunctorArgs<>& lhs, const FunctorArgs<>& rhs)
+            static void typed_copy(FunctorArgs<CapacitySize>& lhs, const FunctorArgs<CapacitySize>& rhs)
         {
-            store_functor<T>(lhs, get_typed_functor<T>(rhs));
+            store_functor<T, CapacitySize>(lhs, get_typed_functor<T, CapacitySize>(rhs));
         }
 
         /**
@@ -272,7 +273,7 @@ namespace delegate
          */
         template<typename T,
             typename std::enable_if<!std::is_copy_constructible<T>::value, T>::type* = nullptr>
-            static void typed_copy(FunctorArgs<>&, const FunctorArgs<>&)
+            static void typed_copy(FunctorArgs<CapacitySize>&, const FunctorArgs<CapacitySize>&)
         {
         }
 
@@ -284,9 +285,9 @@ namespace delegate
          * @param lhs The reference to provide the moved data.
          */
         template<typename T>
-        static void typed_move(FunctorArgs<>& lhs, FunctorArgs<>&& rhs)
+        static void typed_move(FunctorArgs<CapacitySize>& lhs, FunctorArgs<CapacitySize>&& rhs)
         {
-            move_functor<T>(lhs, std::move(get_typed_functor<T>(rhs)));
+            move_functor<T, CapacitySize>(lhs, std::move(get_typed_functor<T, CapacitySize>(rhs)));
         }
 
         /**
@@ -296,9 +297,9 @@ namespace delegate
          * @param args The memory of the functor type to destroy.
          */
         template<typename T>
-        static void typed_destroy(FunctorArgs<>& args)
+        static void typed_destroy(FunctorArgs<CapacitySize>& args)
         {
-            get_typed_functor<T>(args).~T();
+            get_typed_functor<T, CapacitySize>(args).~T();
         }
     };
 
@@ -313,7 +314,7 @@ namespace delegate
      * @tparam Result The delegate return type - must be default constructable.
      * @tparam Arguments The delegate function arguments.
      */
-    template<typename Result, size_t CapacitySize, typename... Arguments>
+    template<size_t CapacitySize, typename Result, typename... Arguments>
     class Func<NonType, CapacitySize, Result, Arguments...>
     {
     protected:
@@ -333,7 +334,7 @@ namespace delegate
         template<typename T>
         Func(const T& functor) :
             call(&typed_call<T, CapacitySize, Result, Arguments...>),
-            vtable(&Vtable::get_vtable<T>())
+            vtable(&Vtable<CapacitySize>::get_vtable<T>())
         {
             static_assert(can_emplace<T, CapacitySize>(), "Delegate doesn't fit.");
             store_functor(args, functor);
@@ -348,7 +349,7 @@ namespace delegate
         template<typename T>
         Func(T&& functor) :
             call(&typed_call<T, CapacitySize, Result, Arguments...>),
-            vtable(&Vtable::get_vtable<T>())
+            vtable(&Vtable<CapacitySize>::get_vtable<T>())
         {
             move_functor(args, std::move(functor));
         }
@@ -468,7 +469,7 @@ namespace delegate
          * Pointer to the manual virtual table.  This is statically constructed by the compiler or copied from another
          * value and cannot be null.
          */
-        const Vtable* vtable;
+        const Vtable<CapacitySize>* vtable;
     };
 
     /**
