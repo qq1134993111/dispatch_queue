@@ -6,7 +6,6 @@
 #include <array>
 #include <future>
 
-#include "boost/function.hpp"
 #include "boost/lockfree/queue.hpp"
 #include "boost/thread.hpp"
 #include "boost/atomic.hpp"
@@ -20,8 +19,12 @@
 #include <boost/multi_index_container.hpp>
 #include <boost/exception/exception.hpp>
 
+#include "delegate.h"
+
 class DispatchQueue
 {
+    static const int16_t kDelegateCapacitySize = 64;
+    using StorageType = delegate::TemplateFunctorArgs<kDelegateCapacitySize>::StorageType;
 public:
     DispatchQueue() :task_queue_(10240)
     {
@@ -86,15 +89,15 @@ public:
     template<typename F>
     void DispatchAsync(F&& f)
     {
-        std::array<char, sizeof(boost::function<void()>)> item;
-        new (&item[0]) boost::function<void()>(std::forward<F>(f));
+        StorageType item;
+        new (&item) delegate::CustomMoveDelegate<kDelegateCapacitySize,void>(std::forward<F>(f));
         while (!task_queue_.push(item))continue;
     }
 
     template<class F, class... Args>
     void DispatchAsync(F&& f, Args&&... args)
     {
-        boost::function<void()> task = boost::bind(std::forward<F>(f), std::forward<Args>(args)...);
+        delegate::CustomMoveDelegate<kDelegateCapacitySize, void> task = boost::bind(std::forward<F>(f), std::forward<Args>(args)...);
         DispatchAsync(std::move(task));
     }
 
@@ -103,7 +106,7 @@ public:
     {
         using return_type = typename std::result_of<F(Args...)>::type;
 
-        auto task = std::make_shared< std::packaged_task<return_type()>>(boost::bind(std::forward<F>(f), std::forward<Args>(args)...));
+        auto task = std::make_shared<std::packaged_task<return_type()>>(boost::bind(std::forward<F>(f), std::forward<Args>(args)...));
 
         std::future<return_type> res = task->get_future();
 
@@ -141,7 +144,7 @@ public:
     template<class Rep, class Period, class F, class... Args>
     uint64_t SetTimer(boost::chrono::duration<Rep, Period>  timeout_duration, bool repeat, F&& f, Args&&... args)
     {
-        boost::function<void()> func = boost::bind(std::forward<F>(f), std::forward<Args>(args)...);
+        delegate::CustomMoveDelegate<kDelegateCapacitySize, void> func = boost::bind(std::forward<F>(f), std::forward<Args>(args)...);
 
         return SetTimer(timeout_duration, std::move(func), repeat);
     }
@@ -191,13 +194,13 @@ private:
 
     void TaskProc()
     {
-        std::array<char, sizeof(boost::function<void()>)> item;
+        StorageType item;
 
         while (!quit_)
         {
             if (task_queue_.pop(item))
             {
-                auto p = reinterpret_cast<boost::function<void()>*>(&item[0]);
+                auto p = reinterpret_cast<delegate::CustomMoveDelegate<kDelegateCapacitySize, void>*>(&item[0]);
                 try
                 {
                     (*p)();
@@ -207,7 +210,7 @@ private:
                     std::cout << "task_queue_ handle exception:" << boost::current_exception_diagnostic_information() << "\n";
                 }
 
-                p->~function();
+                p->~Func();
             }
         }
 
@@ -215,7 +218,7 @@ private:
 
     void TimerProc()
     {
-        std::array<char, sizeof(boost::function<void()>)> data;
+        StorageType data;
         boost::unique_lock< decltype(mtx_) > lc(mtx_);
 
         while (!quit_)
@@ -257,7 +260,7 @@ private:
 
                     for (auto& work : v_expired)
                     {
-                        new (&data[0]) boost::function<void()>(std::move(work.callback));
+                        new (&data) boost::function<void()>(std::move(work.callback));
                         while (!task_queue_.push(data))continue;
                     }
 
@@ -269,7 +272,7 @@ private:
 
     }
 
-    boost::lockfree::queue<std::array<char, sizeof(boost::function<void()>)>> task_queue_;
+    boost::lockfree::queue<StorageType> task_queue_;
 
     boost::scoped_ptr<boost::thread> task_handle_thread_;
     boost::scoped_ptr<boost::thread> timer_handle_thread_;

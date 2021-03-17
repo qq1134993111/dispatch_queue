@@ -146,6 +146,7 @@
     <Text Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="delegate.h" />
     <ClInclude Include="dispatch_queue.h" />
     <ClInclude Include="TimeElapsed.hpp" />
   </ItemGroup>
