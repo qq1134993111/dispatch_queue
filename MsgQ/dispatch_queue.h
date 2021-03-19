@@ -144,7 +144,7 @@ public:
     template<class Rep, class Period, class F, class... Args>
     uint64_t SetTimer(boost::chrono::duration<Rep, Period>  timeout_duration, bool repeat, F&& f, Args&&... args)
     {
-        delegate::CustomDelegate<kDelegateCapacitySize, void> func = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
+        auto func = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
 
         return SetTimer(timeout_duration, std::move(func), repeat);
     }
