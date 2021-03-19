@@ -351,6 +351,7 @@ namespace delegate
             call(&typed_call<T, CapacitySize, Result, Arguments...>),
             vtable(&Vtable<CapacitySize>::get_vtable<T>())
         {
+            static_assert(can_emplace<T, CapacitySize>()||std::is_same<T,Func<NonMovableType,CapacitySize, Result, Arguments...>>::value, "Delegate doesn't fit.");
             move_functor(args, std::move(functor));
         }
 

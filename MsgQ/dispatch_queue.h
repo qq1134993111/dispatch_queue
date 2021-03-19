@@ -97,7 +97,7 @@ public:
     template<class F, class... Args>
     void DispatchAsync(F&& f, Args&&... args)
     {
-        delegate::CustomMoveDelegate<kDelegateCapacitySize, void> task = boost::bind(std::forward<F>(f), std::forward<Args>(args)...);
+        delegate::CustomMoveDelegate<kDelegateCapacitySize, void> task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
         DispatchAsync(std::move(task));
     }
 
@@ -106,7 +106,7 @@ public:
     {
         using return_type = typename std::result_of<F(Args...)>::type;
 
-        auto task = std::make_shared<std::packaged_task<return_type()>>(boost::bind(std::forward<F>(f), std::forward<Args>(args)...));
+        auto task = std::make_shared<std::packaged_task<return_type()>>(std::bind(std::forward<F>(f), std::forward<Args>(args)...));
 
         std::future<return_type> res = task->get_future();
 
@@ -144,7 +144,7 @@ public:
     template<class Rep, class Period, class F, class... Args>
     uint64_t SetTimer(boost::chrono::duration<Rep, Period>  timeout_duration, bool repeat, F&& f, Args&&... args)
     {
-        delegate::CustomDelegate<kDelegateCapacitySize, void> func = boost::bind(std::forward<F>(f), std::forward<Args>(args)...);
+        delegate::CustomDelegate<kDelegateCapacitySize, void> func = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
 
         return SetTimer(timeout_duration, std::move(func), repeat);
     }
