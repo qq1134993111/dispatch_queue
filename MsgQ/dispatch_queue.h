@@ -287,13 +287,13 @@ private:
         uint64_t id;
         boost::chrono::steady_clock::time_point expiration;
         boost::chrono::nanoseconds repeat_interval;
-        delegate::CustomDelegate<kDelegateCapacitySize, void> callback;
+        boost::function<void()> callback;
 
 
         TimeEvent(const TimeEvent& o) = default;
         TimeEvent& operator=(const TimeEvent& o) = default;
 
-        TimeEvent(uint64_t id, boost::chrono::steady_clock::time_point expiration, boost::chrono::nanoseconds repeat_interval, delegate::CustomDelegate<kDelegateCapacitySize, void> callback)
+        TimeEvent(uint64_t id, boost::chrono::steady_clock::time_point expiration, boost::chrono::nanoseconds repeat_interval, boost::function<void()> callback)
         {
             this->id = id;
             this->expiration = expiration;
