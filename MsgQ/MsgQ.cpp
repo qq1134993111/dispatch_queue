@@ -92,7 +92,7 @@ int main()
         TestStrand2(1000000, 0);
     }
 
-    if (1)
+    if (0)
     {
         std::cout << "TestDispatchQueue\n";
         TestDispatchQueue(10000, 10000);

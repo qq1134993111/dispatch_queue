@@ -24,7 +24,7 @@
 class DispatchQueue
 {
     static const int16_t kDelegateCapacitySize = 64;
-    using StorageType = delegate::CustomMoveDelegate<kDelegateCapacitySize, void>;
+    using StorageType = std::array<char, sizeof(delegate::CustomMoveDelegate<kDelegateCapacitySize, void>)>;
 public:
     DispatchQueue() :task_queue_(10240)
     {
@@ -89,7 +89,9 @@ public:
     template<typename F>
     void DispatchAsync(F&& f)
     {
-        task_queue_.enqueue(std::forward<F>(f));
+        StorageType item;
+        new (&item) delegate::CustomMoveDelegate<kDelegateCapacitySize, void>(std::forward<F>(f));
+        task_queue_.enqueue(item);
     }
 
     template<class F, class... Args>
@@ -198,26 +200,25 @@ private:
         {
             if (task_queue_.try_dequeue(data))
             {
-
+                auto p = reinterpret_cast<delegate::CustomMoveDelegate<kDelegateCapacitySize, void>*>(&data[0]);
                 try
                 {
-                    data();
+                    (*p)();
                 }
                 catch (...)
                 {
                     std::cout << "task_queue_ handle exception:" << boost::current_exception_diagnostic_information() << "\n";
                 }
+
+                p->~Func();
             }
-            //else
-            //{
-            //    std::this_thread::yield();
-            //}
         }
 
     }
 
     void TimerProc()
     {
+        StorageType data;
         boost::unique_lock< decltype(mtx_) > lc(mtx_);
 
         while (!quit_)
@@ -259,7 +260,8 @@ private:
 
                     for (auto& work : v_expired)
                     {
-                        task_queue_.enqueue(std::move(work.callback));
+                        new (&data) delegate::CustomMoveDelegate<kDelegateCapacitySize, void>(std::move(work.callback));
+                        task_queue_.enqueue(data);
                     }
 
                     lc.lock();
