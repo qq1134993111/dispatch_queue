@@ -6,7 +6,7 @@
 #include <array>
 #include <future>
 
-#include "boost/lockfree/queue.hpp"
+#include "concurrentqueue.h"
 #include "boost/thread.hpp"
 #include "boost/atomic.hpp"
 #include "boost/scoped_ptr.hpp"
@@ -24,7 +24,7 @@
 class DispatchQueue
 {
     static const int16_t kDelegateCapacitySize = 64;
-    using StorageType = std::array<char, sizeof(delegate::CustomMoveDelegate<kDelegateCapacitySize, void>)>;
+    using StorageType = delegate::CustomMoveDelegate<kDelegateCapacitySize, void>;
 public:
     DispatchQueue() :task_queue_(10240)
     {
@@ -89,15 +89,13 @@ public:
     template<typename F>
     void DispatchAsync(F&& f)
     {
-        StorageType item;
-        new (&item) delegate::CustomMoveDelegate<kDelegateCapacitySize, void>(std::forward<F>(f));
-        while (!task_queue_.push(item))continue;
+        task_queue_.enqueue(std::forward<F>(f));
     }
 
     template<class F, class... Args>
     void DispatchAsync(F&& f, Args&&... args)
     {
-        delegate::CustomMoveDelegate<kDelegateCapacitySize, void> task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
+        StorageType task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
         DispatchAsync(std::move(task));
     }
 
@@ -194,23 +192,21 @@ private:
 
     void TaskProc()
     {
-        StorageType item;
+        StorageType data;
 
         while (!quit_)
         {
-            if (task_queue_.pop(item))
+            if (task_queue_.try_dequeue(data))
             {
-                auto p = reinterpret_cast<delegate::CustomMoveDelegate<kDelegateCapacitySize, void>*>(&item[0]);
+
                 try
                 {
-                    (*p)();
+                    data();
                 }
                 catch (...)
                 {
                     std::cout << "task_queue_ handle exception:" << boost::current_exception_diagnostic_information() << "\n";
                 }
-
-                p->~Func();
             }
         }
 
@@ -218,7 +214,6 @@ private:
 
     void TimerProc()
     {
-        StorageType data;
         boost::unique_lock< decltype(mtx_) > lc(mtx_);
 
         while (!quit_)
@@ -260,8 +255,7 @@ private:
 
                     for (auto& work : v_expired)
                     {
-                        new (&data) delegate::CustomMoveDelegate<kDelegateCapacitySize, void>(std::move(work.callback));
-                        while (!task_queue_.push(data))continue;
+                        task_queue_.enqueue(std::move(work.callback));
                     }
 
                     lc.lock();
@@ -272,7 +266,7 @@ private:
 
     }
 
-    boost::lockfree::queue<StorageType> task_queue_;
+    moodycamel::ConcurrentQueue<StorageType> task_queue_;
 
     boost::scoped_ptr<boost::thread> task_handle_thread_;
     boost::scoped_ptr<boost::thread> timer_handle_thread_;

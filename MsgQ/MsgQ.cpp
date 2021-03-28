@@ -13,6 +13,7 @@ namespace spd = spdlog;
 
 auto daily_logger = spd::daily_logger_mt("daily_logger", "daily", 2, 30);
 
+#include"Test.h"
 
 void TestMsg()
 {
@@ -65,12 +66,62 @@ void TestTimer(uint32_t index)
     std::cout << ++i << "\n";
 }
 
+struct MyStruct
+{
+    MyStruct() {
+        std::cout << "MyStruct\n";
+    }
+    ~MyStruct() {
+        std::cout << "~MyStruct\n";
+    }
+};
+
 int main()
 {
+    if (1)
+    {
+        std::cout << "TestDispatchQueue\n";
+        TestDispatchQueue(1000000, 0);
+        std::cout << "TestAsio\n";
+        TestAsio(1000000, 0);
+        std::cout << "TestStrand\n";
+        TestStrand(1000000, 0);
+        std::cout << "TestAsio2\n";
+        TestAsio2(1000000, 0);
+        std::cout << "TestStrand2\n";
+        TestStrand2(1000000, 0);
+    }
+
+    if (1)
+    {
+        std::cout << "TestDispatchQueue\n";
+        TestDispatchQueue(10000, 10000);
+        std::cout << "TestAsio\n";
+        TestAsio(10000, 10000);
+        std::cout << "TestStrand\n";
+        TestStrand(10000, 10000);
+        std::cout << "TestAsio2\n";
+        TestAsio2(10000, 10000);
+        std::cout << "TestStrand2\n";
+        TestStrand2(10000, 10000);
+    }
+
     spdlog::set_pattern("*** [%Y-%m-%d %H:%M:%S,%f] %v ***");
     daily_logger->info("main");
 
     DispatchQueue::GetDefaultDispatchQueue().Start();
+
+    if (1)
+    {
+        auto p = std::make_shared<MyStruct>();
+        DispatchQueue::GetDefaultDispatchQueue().DispatchAsync([p] {
+            std::cout << "hello\n";
+            });
+        DispatchQueue::GetDefaultDispatchQueue().DispatchAsync([p] {
+            std::cout << "world\n";
+            });
+    }
+
     for (int i = 0; i < 10; i++)
     {
         DispatchQueue::GetDefaultDispatchQueue().DispatchAsync(&TestMsg);

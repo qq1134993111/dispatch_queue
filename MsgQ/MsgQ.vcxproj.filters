@@ -27,6 +27,12 @@
     <ClInclude Include="delegate.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="concurrentqueue.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Test.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="MsgQ.cpp">
