@@ -208,6 +208,10 @@ private:
                     std::cout << "task_queue_ handle exception:" << boost::current_exception_diagnostic_information() << "\n";
                 }
             }
+            //else
+            //{
+            //    std::this_thread::yield();
+            //}
         }
 
     }
